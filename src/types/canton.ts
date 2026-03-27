@@ -1,12 +1,39 @@
+export type AuthMode = 'shared-secret' | 'oauth2'
+
+export interface SharedSecretAuth {
+  mode: 'shared-secret'
+  userId: string
+  secret: string
+  audience: string
+  issuer: string
+}
+
+export interface OAuth2Auth {
+  mode: 'oauth2'
+  tokenUrl: string
+  clientId: string
+  clientSecret: string
+  audience: string
+  validatorAudience?: string
+}
+
+export type AuthConfig = SharedSecretAuth | OAuth2Auth
+
 export interface NodeConfig {
   id: string
   name: string
+  color: string
+  // Connection — supports both local (url+port) and remote (full URL) modes
   jsonApiUrl: string
   jsonApiPort: number
   validatorApiUrl: string
   validatorApiPort: number
   ledgerApiPort: number
-  color: string
+  // Auth configuration
+  auth: AuthConfig
+  // Optional metadata
+  adminUser?: string
+  globalSynchronizerId?: string
 }
 
 export interface ConnectedSynchronizer {

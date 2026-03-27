@@ -15,10 +15,21 @@ import type {
   DsoPartyResponse,
 } from '@/types/canton'
 
+function getProxyBase(url: string, port: number, nodeId: string, type: 'json' | 'validator'): string {
+  // For default local nodes, use the named proxy
+  if (url === 'http://localhost') {
+    return `/proxy/${type}/${nodeId}`
+  }
+  // For remote nodes, use the generic remote proxy with base64url-encoded origin
+  const fullUrl = port ? `${url}:${port}` : url
+  const encoded = btoa(fullUrl).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return `/proxy/remote/${encoded}`
+}
+
 function createJsonApiClient(node: NodeConfig, token?: string) {
-  // Use Vite proxy to avoid CORS: /proxy/json/{nodeId}/... -> localhost:{port}/...
+  const baseURL = getProxyBase(node.jsonApiUrl, node.jsonApiPort, node.id, 'json')
   return axios.create({
-    baseURL: `/proxy/json/${node.id}`,
+    baseURL,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -28,9 +39,9 @@ function createJsonApiClient(node: NodeConfig, token?: string) {
 }
 
 function createValidatorApiClient(node: NodeConfig, token?: string) {
-  // Use Vite proxy to avoid CORS: /proxy/validator/{nodeId}/... -> localhost:{port}/...
+  const baseURL = getProxyBase(node.validatorApiUrl, node.validatorApiPort, node.id, 'validator')
   return axios.create({
-    baseURL: `/proxy/validator/${node.id}`,
+    baseURL,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -244,35 +255,77 @@ export async function getDsoPartyId(node: NodeConfig, token?: string): Promise<D
   return res.data
 }
 
-// ---- JWT Token Generation (for shared-secret auth) ----
+// ---- JWT Token Generation (supports shared-secret and OAuth2) ----
 
 import { SignJWT } from 'jose'
 
-let cachedToken: { token: string; expiresAt: number } | null = null
+// Token cache keyed by nodeId
+const tokenCache: Record<string, { token: string; expiresAt: number }> = {}
 
-export async function generateSharedSecretToken(
-  userId: string = 'ledger-api-user',
-  audience: string = 'https://canton.network.global',
-  secret: string = 'unsafe',
-): Promise<string> {
-  // Return cached token if still valid (with 60s buffer)
-  if (cachedToken && cachedToken.expiresAt > Date.now() + 60000) {
-    return cachedToken.token
+export async function getAuthToken(node: NodeConfig): Promise<string> {
+  const cached = tokenCache[node.id]
+  if (cached && cached.expiresAt > Date.now() + 60000) {
+    return cached.token
   }
 
-  const secretKey = new TextEncoder().encode(secret)
-  const token = await new SignJWT({
-    sub: userId,
-    aud: audience,
+  if (node.auth.mode === 'shared-secret') {
+    const { userId, secret, audience, issuer } = node.auth
+    const secretKey = new TextEncoder().encode(secret)
+    const token = await new SignJWT({
+      sub: userId,
+      aud: audience,
+      iss: issuer,
+    })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+      .setIssuedAt()
+      .setExpirationTime('24h')
+      .sign(secretKey)
+
+    tokenCache[node.id] = { token, expiresAt: Date.now() + 24 * 60 * 60 * 1000 }
+    return token
+  }
+
+  if (node.auth.mode === 'oauth2') {
+    const { tokenUrl, clientId, clientSecret, audience } = node.auth
+    // Proxy through Vite to avoid CORS on the OAuth2 token endpoint
+    const urlObj = new URL(tokenUrl)
+    const origin = urlObj.origin
+    const pathname = urlObj.pathname
+    const encoded = btoa(origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+    const res = await axios.post(
+      `/proxy/oauth2-token/${encoded}${pathname}`,
+      new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: clientId,
+        client_secret: clientSecret,
+        audience,
+      }).toString(),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    )
+
+    const token = res.data.access_token
+    const expiresIn = (res.data.expires_in ?? 3600) * 1000
+    tokenCache[node.id] = { token, expiresAt: Date.now() + expiresIn }
+    return token
+  }
+
+  throw new Error(`Unknown auth mode: ${(node.auth as { mode: string }).mode}`)
+}
+
+// Keep backward compatibility — deprecated, use getAuthToken instead
+export async function generateSharedSecretToken(): Promise<string> {
+  // Fallback for old callers that don't pass a node
+  const secretKey = new TextEncoder().encode('unsafe')
+  return new SignJWT({
+    sub: 'ledger-api-user',
+    aud: 'https://canton.network.global',
     iss: 'unsafe-auth',
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setIssuedAt()
     .setExpirationTime('24h')
     .sign(secretKey)
-
-  cachedToken = { token, expiresAt: Date.now() + 24 * 60 * 60 * 1000 }
-  return token
 }
 
 // ---- Helper: Build active contracts filter ----

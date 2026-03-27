@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
-import { Settings, Plus, Trash2, Save, RotateCcw } from 'lucide-react'
+import { Settings, Plus, Trash2, Save, RotateCcw, Eye, EyeOff, Globe, Key } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,129 @@ import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { nodesAtom, refreshIntervalAtom, selectedNodeIdAtom } from '@/stores/nodeStore'
 import { DEFAULT_NODES } from '@/constants/nodes'
-import type { NodeConfig } from '@/types/canton'
+import type { NodeConfig, AuthConfig } from '@/types/canton'
+
+function SecretInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const [show, setShow] = useState(false)
+  return (
+    <div className="relative">
+      <Input
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="pr-8"
+      />
+      <button
+        type="button"
+        onClick={() => setShow(!show)}
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+        tabIndex={-1}
+      >
+        {show ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+      </button>
+    </div>
+  )
+}
+
+function AuthConfigForm({ auth, onChange }: { auth: AuthConfig; onChange: (a: AuthConfig) => void }) {
+  const isOAuth2 = auth.mode === 'oauth2'
+
+  const switchMode = (mode: 'shared-secret' | 'oauth2') => {
+    if (mode === 'shared-secret') {
+      onChange({
+        mode: 'shared-secret',
+        userId: 'ledger-api-user',
+        secret: 'unsafe',
+        audience: 'https://canton.network.global',
+        issuer: 'unsafe-auth',
+      })
+    } else {
+      onChange({
+        mode: 'oauth2',
+        tokenUrl: '',
+        clientId: '',
+        clientSecret: '',
+        audience: '',
+      })
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1">
+        <Key className="h-3 w-3 text-muted-foreground" />
+        <label className="text-[10px] text-muted-foreground font-medium">Authentication</label>
+      </div>
+      <div className="flex gap-1">
+        <Button
+          type="button"
+          size="sm"
+          variant={!isOAuth2 ? 'default' : 'outline'}
+          className="h-7 text-[10px]"
+          onClick={() => switchMode('shared-secret')}
+        >
+          Shared Secret
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={isOAuth2 ? 'default' : 'outline'}
+          className="h-7 text-[10px]"
+          onClick={() => switchMode('oauth2')}
+        >
+          OAuth2
+        </Button>
+      </div>
+
+      {auth.mode === 'shared-secret' && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[10px] text-muted-foreground">User ID</label>
+            <Input value={auth.userId} onChange={(e) => onChange({ ...auth, userId: e.target.value })} />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground">Secret</label>
+            <SecretInput value={auth.secret} onChange={(v) => onChange({ ...auth, secret: v })} />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground">Audience</label>
+            <Input value={auth.audience} onChange={(e) => onChange({ ...auth, audience: e.target.value })} />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground">Issuer</label>
+            <Input value={auth.issuer} onChange={(e) => onChange({ ...auth, issuer: e.target.value })} />
+          </div>
+        </div>
+      )}
+
+      {auth.mode === 'oauth2' && (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="col-span-2">
+            <label className="text-[10px] text-muted-foreground">Token URL</label>
+            <Input value={auth.tokenUrl} onChange={(e) => onChange({ ...auth, tokenUrl: e.target.value })} placeholder="https://your-tenant.auth0.com/oauth/token" />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground">Client ID</label>
+            <Input value={auth.clientId} onChange={(e) => onChange({ ...auth, clientId: e.target.value })} />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground">Client Secret</label>
+            <SecretInput value={auth.clientSecret} onChange={(v) => onChange({ ...auth, clientSecret: v })} />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground">Audience</label>
+            <Input value={auth.audience} onChange={(e) => onChange({ ...auth, audience: e.target.value })} placeholder="https://your-audience" />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground">Validator Audience (optional)</label>
+            <Input value={auth.validatorAudience ?? ''} onChange={(e) => onChange({ ...auth, validatorAudience: e.target.value || undefined })} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function NodeConfigCard({
   node,
@@ -29,6 +151,13 @@ function NodeConfigCard({
     setEditing(false)
   }
 
+  const handleCancel = () => {
+    setForm(node)
+    setEditing(false)
+  }
+
+  const isLocal = node.jsonApiUrl === 'http://localhost'
+
   return (
     <Card className={isSelected ? 'border-primary' : ''}>
       <CardContent className="p-4">
@@ -37,9 +166,15 @@ function NodeConfigCard({
             <div className="h-3 w-3 rounded-full" style={{ backgroundColor: node.color }} />
             <span className="font-medium text-sm">{node.name}</span>
             {isSelected && <Badge variant="default" className="text-[10px]">Active</Badge>}
+            <Badge variant={isLocal ? 'secondary' : 'outline'} className="text-[10px]">
+              {isLocal ? 'Local' : 'Remote'}
+            </Badge>
+            <Badge variant="outline" className="text-[10px]">
+              {node.auth.mode === 'oauth2' ? 'OAuth2' : 'Shared Secret'}
+            </Badge>
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" onClick={() => setEditing(!editing)}>
+            <Button variant="ghost" size="sm" onClick={() => editing ? handleCancel() : setEditing(true)}>
               {editing ? 'Cancel' : 'Edit'}
             </Button>
             <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onDelete}>
@@ -49,7 +184,7 @@ function NodeConfigCard({
         </div>
 
         {editing ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-[10px] text-muted-foreground">Name</label>
@@ -60,26 +195,48 @@ function NodeConfigCard({
                 <Input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} className="h-9" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
+
+            <Separator />
+            <div className="flex items-center gap-1">
+              <Globe className="h-3 w-3 text-muted-foreground" />
+              <label className="text-[10px] text-muted-foreground font-medium">Connection</label>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
                 <label className="text-[10px] text-muted-foreground">JSON API URL</label>
-                <Input value={form.jsonApiUrl} onChange={(e) => setForm({ ...form, jsonApiUrl: e.target.value })} />
+                <Input value={form.jsonApiUrl} onChange={(e) => setForm({ ...form, jsonApiUrl: e.target.value })} placeholder="http://localhost or http://1.2.3.4" />
               </div>
               <div>
-                <label className="text-[10px] text-muted-foreground">JSON API Port</label>
-                <Input type="number" value={form.jsonApiPort} onChange={(e) => setForm({ ...form, jsonApiPort: parseInt(e.target.value) })} />
+                <label className="text-[10px] text-muted-foreground">Port</label>
+                <Input type="number" value={form.jsonApiPort} onChange={(e) => setForm({ ...form, jsonApiPort: parseInt(e.target.value) || 0 })} />
               </div>
             </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
+                <label className="text-[10px] text-muted-foreground">Validator API URL</label>
+                <Input value={form.validatorApiUrl} onChange={(e) => setForm({ ...form, validatorApiUrl: e.target.value })} placeholder="http://localhost or http://1.2.3.4" />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground">Port</label>
+                <Input type="number" value={form.validatorApiPort} onChange={(e) => setForm({ ...form, validatorApiPort: parseInt(e.target.value) || 0 })} />
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] text-muted-foreground">Validator API URL</label>
-                <Input value={form.validatorApiUrl} onChange={(e) => setForm({ ...form, validatorApiUrl: e.target.value })} />
+                <label className="text-[10px] text-muted-foreground">Admin User (optional)</label>
+                <Input value={form.adminUser ?? ''} onChange={(e) => setForm({ ...form, adminUser: e.target.value || undefined })} />
               </div>
               <div>
-                <label className="text-[10px] text-muted-foreground">Validator API Port</label>
-                <Input type="number" value={form.validatorApiPort} onChange={(e) => setForm({ ...form, validatorApiPort: parseInt(e.target.value) })} />
+                <label className="text-[10px] text-muted-foreground">Global Synchronizer ID (optional)</label>
+                <Input value={form.globalSynchronizerId ?? ''} onChange={(e) => setForm({ ...form, globalSynchronizerId: e.target.value || undefined })} />
               </div>
             </div>
+
+            <Separator />
+            <AuthConfigForm auth={form.auth} onChange={(auth) => setForm({ ...form, auth })} />
+
             <Button size="sm" onClick={handleSave}>
               <Save className="h-3.5 w-3.5 mr-1" /> Save
             </Button>
@@ -88,16 +245,28 @@ function NodeConfigCard({
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
             <div>
               <span className="text-muted-foreground">JSON API: </span>
-              <span className="font-mono">{node.jsonApiUrl}:{node.jsonApiPort}</span>
+              <span className="font-mono">
+                {node.jsonApiUrl === 'http://localhost' ? `:${node.jsonApiPort}` : `${node.jsonApiUrl}:${node.jsonApiPort}`}
+              </span>
             </div>
             <div>
               <span className="text-muted-foreground">Validator: </span>
-              <span className="font-mono">{node.validatorApiUrl}:{node.validatorApiPort}</span>
+              <span className="font-mono">
+                {node.validatorApiUrl === 'http://localhost' ? `:${node.validatorApiPort}` : `${node.validatorApiUrl}:${node.validatorApiPort}`}
+              </span>
             </div>
-            <div>
-              <span className="text-muted-foreground">Ledger gRPC: </span>
-              <span className="font-mono">:{node.ledgerApiPort}</span>
-            </div>
+            {node.adminUser && (
+              <div>
+                <span className="text-muted-foreground">Admin: </span>
+                <span className="font-mono">{node.adminUser}</span>
+              </div>
+            )}
+            {node.globalSynchronizerId && (
+              <div className="col-span-2">
+                <span className="text-muted-foreground">Synchronizer: </span>
+                <span className="font-mono text-[10px]">{node.globalSynchronizerId}</span>
+              </div>
+            )}
           </div>
         )}
       </CardContent>
@@ -120,6 +289,34 @@ export function SettingsPage() {
       validatorApiPort: 5903,
       ledgerApiPort: 5901,
       color: '#64748b',
+      auth: {
+        mode: 'shared-secret',
+        userId: 'ledger-api-user',
+        secret: 'unsafe',
+        audience: 'https://canton.network.global',
+        issuer: 'unsafe-auth',
+      },
+    }
+    setNodes([...nodes, newNode])
+  }
+
+  const handleAddRemoteNode = () => {
+    const newNode: NodeConfig = {
+      id: `remote-${Date.now()}`,
+      name: `Remote Node ${nodes.length + 1}`,
+      jsonApiUrl: 'http://146.59.110.100',
+      jsonApiPort: 7575,
+      validatorApiUrl: 'http://146.59.110.100',
+      validatorApiPort: 5003,
+      ledgerApiPort: 0,
+      color: '#ec4899',
+      auth: {
+        mode: 'oauth2',
+        tokenUrl: '',
+        clientId: '',
+        clientSecret: '',
+        audience: '',
+      },
     }
     setNodes([...nodes, newNode])
   }
@@ -184,8 +381,11 @@ export function SettingsPage() {
           <Button variant="outline" size="sm" onClick={handleReset}>
             <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
           </Button>
-          <Button size="sm" onClick={handleAddNode}>
-            <Plus className="h-3.5 w-3.5 mr-1" /> Add Node
+          <Button variant="outline" size="sm" onClick={handleAddNode}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> Local Node
+          </Button>
+          <Button size="sm" onClick={handleAddRemoteNode}>
+            <Globe className="h-3.5 w-3.5 mr-1" /> Remote Node
           </Button>
         </div>
       </div>

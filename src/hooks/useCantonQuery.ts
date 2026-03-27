@@ -4,8 +4,8 @@ import { selectedNodeAtom, refreshIntervalAtom } from '@/stores/nodeStore'
 import * as api from '@/api/canton'
 import type { ActiveContract, ActiveContractsRequest, NodeConfig } from '@/types/canton'
 
-async function getToken() {
-  return api.generateSharedSecretToken()
+async function getToken(node: NodeConfig) {
+  return api.getAuthToken(node)
 }
 
 export function useNodeConfig(): NodeConfig {
@@ -20,7 +20,7 @@ export function useEnsureReadPermissions() {
     queryKey: ['ensure-permissions', node.id],
     queryFn: async () => {
       if (grantedNodes.has(node.id)) return true
-      const token = await getToken()
+      const token = await getToken(node)
       await api.grantReadAsAnyParty(node, token)
       grantedNodes.add(node.id)
       return true
@@ -44,7 +44,7 @@ export function useConnectedSynchronizers() {
   return useQuery({
     queryKey: ['synchronizers', node.id],
     queryFn: async () => {
-      const token = await getToken()
+      const token = await getToken(node)
       return api.getConnectedSynchronizers(node, token)
     },
     refetchInterval,
@@ -57,7 +57,7 @@ export function useLedgerEnd() {
   return useQuery({
     queryKey: ['ledger-end', node.id],
     queryFn: async () => {
-      const token = await getToken()
+      const token = await getToken(node)
       return api.getLedgerEnd(node, token)
     },
     refetchInterval,
@@ -72,7 +72,7 @@ export function useAllUsers() {
   return useQuery({
     queryKey: ['all-users', node.id],
     queryFn: async () => {
-      const token = await getToken()
+      const token = await getToken(node)
       return api.listAllUsers(node, token, { batchSize: 500 })
     },
     staleTime: 30000,
@@ -96,7 +96,7 @@ export function useParticipantId() {
   return useQuery({
     queryKey: ['participant-id', node.id],
     queryFn: async () => {
-      const token = await getToken()
+      const token = await getToken(node)
       return api.getParticipantId(node, token)
     },
     staleTime: 60000,
@@ -109,7 +109,7 @@ export function usePackages() {
   return useQuery({
     queryKey: ['packages', node.id],
     queryFn: async () => {
-      const token = await getToken()
+      const token = await getToken(node)
       return api.listPackages(node, token)
     },
     refetchInterval,
@@ -121,7 +121,7 @@ export function useDsoPartyId() {
   return useQuery({
     queryKey: ['dso-party', node.id],
     queryFn: async () => {
-      const token = await getToken()
+      const token = await getToken(node)
       return api.getDsoPartyId(node, token)
     },
     staleTime: 60000,
@@ -133,7 +133,7 @@ export function useActiveContracts(request: ActiveContractsRequest | null, key?:
   return useQuery({
     queryKey: ['active-contracts', node.id, key, request],
     queryFn: async () => {
-      const token = await getToken()
+      const token = await getToken(node)
       return api.getActiveContracts(node, token, request!)
     },
     enabled: !!request,
@@ -146,7 +146,7 @@ export function useDiscoverTemplates(partyId: string | undefined) {
   return useQuery({
     queryKey: ['discover-templates', node.id, partyId],
     queryFn: async () => {
-      const token = await getToken()
+      const token = await getToken(node)
       const request = api.buildWildcardFilter(partyId!)
       const contracts = await api.getActiveContracts(node, token, request)
       // Group contracts by templateId
@@ -176,7 +176,7 @@ export function usePackageDiscovery(partyId: string | undefined) {
   return useQuery({
     queryKey: ['package-discovery', node.id, partyId],
     queryFn: async () => {
-      const token = await getToken()
+      const token = await getToken(node)
       return api.discoverPackageInfo(node, token, partyId!)
     },
     enabled: !!partyId,

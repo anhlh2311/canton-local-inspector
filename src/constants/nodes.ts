@@ -1,5 +1,13 @@
 import type { NodeConfig } from '@/types/canton'
 
+const defaultAuth = {
+  mode: 'shared-secret' as const,
+  userId: 'ledger-api-user',
+  secret: 'unsafe',
+  audience: 'https://canton.network.global',
+  issuer: 'unsafe-auth',
+}
+
 export const DEFAULT_NODES: NodeConfig[] = [
   {
     id: 'trading-partner',
@@ -10,6 +18,7 @@ export const DEFAULT_NODES: NodeConfig[] = [
     validatorApiPort: 1903,
     ledgerApiPort: 1901,
     color: '#3b82f6',
+    auth: { ...defaultAuth },
   },
   {
     id: 'app-user',
@@ -20,6 +29,7 @@ export const DEFAULT_NODES: NodeConfig[] = [
     validatorApiPort: 2903,
     ledgerApiPort: 2901,
     color: '#22c55e',
+    auth: { ...defaultAuth },
   },
   {
     id: 'app-provider',
@@ -30,6 +40,7 @@ export const DEFAULT_NODES: NodeConfig[] = [
     validatorApiPort: 3903,
     ledgerApiPort: 3901,
     color: '#f59e0b',
+    auth: { ...defaultAuth },
   },
   {
     id: 'super-validator',
@@ -40,6 +51,7 @@ export const DEFAULT_NODES: NodeConfig[] = [
     validatorApiPort: 4903,
     ledgerApiPort: 4901,
     color: '#a855f7',
+    auth: { ...defaultAuth },
   },
 ]
 
