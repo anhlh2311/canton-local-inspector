@@ -329,6 +329,14 @@ export async function getParty(node: NodeConfig, token: string, partyId: string)
   return res.data
 }
 
+export async function listParties(node: NodeConfig, token: string, pageSize: number = 200, pageToken?: string): Promise<PartyResponse> {
+  const client = createJsonApiClient(node, token)
+  let url = `/v2/parties?pageSize=${pageSize}`
+  if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`
+  const res = await client.get(url)
+  return res.data
+}
+
 export async function getParticipantId(node: NodeConfig, token: string): Promise<ParticipantIdResponse> {
   const client = createJsonApiClient(node, token)
   const res = await client.get('/v2/parties/participant-id')

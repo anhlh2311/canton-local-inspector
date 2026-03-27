@@ -6,7 +6,7 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 
 - **Network Overview** — Node health checks, Canton version, ledger offset, user/package counts across all connected nodes
 - **Synchronizer & DSO** — Global synchronizer details, DSO party ID, dynamically discovered active contracts with JSON payload viewer, responsive multi-column party grid with expand/collapse
-- **Parties Explorer** — Browse all users and parties with rights (Admin, ActAs, ReadAs), full-text search across all loaded users, client-side "Show more" pagination
+- **Parties Explorer** — Three tabs: **Users** (local users from `/v2/users`, fast default), **Network Parties** (all parties from `/v2/parties`, paginated 200/page, opt-in for large networks), and **Party Lookup** (check specific party existence by ID). Local/Remote badges, rights, annotations.
 - **Package Manager** — List installed packages with auto-discovered names, templates, and active contract counts per package
 - **Contract Explorer** — Query active contracts by template, interface, or contract ID with autocomplete dropdowns for party and template selection. Auto-queries on selection with refresh button.
 - **Settings** — Configure local and remote node connections with per-node auth (shared-secret or OAuth2), auto-refresh intervals, custom colors
@@ -133,6 +133,8 @@ If all parties exceed the limit, the UI falls back to manual template entry in t
 | `/v2/state/ledger-end` | GET | Current ledger offset |
 | `/v2/users` | GET | List users (auto-paginates, 500/batch) |
 | `/v2/users/{id}/rights` | POST | Grant read permissions |
+| `/v2/parties` | GET | List ALL parties (including external) |
+| `/v2/parties/party?parties=X` | GET | Look up specific party by ID |
 | `/v2/parties/participant-id` | GET | Get participant namespace |
 | `/v2/packages` | GET | List installed package IDs |
 

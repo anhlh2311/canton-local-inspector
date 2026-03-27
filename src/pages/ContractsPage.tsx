@@ -24,7 +24,8 @@ import { buildTemplateFilter, buildInterfaceFilter } from '@/api/canton'
 import { cn, truncateId } from '@/lib/utils'
 import type { ActiveContract } from '@/types/canton'
 
-// Build party autocomplete options from loaded users
+// Build party autocomplete options from loaded users (lightweight, already cached).
+// Users can also type any party ID manually for external parties.
 function usePartyOptions() {
   const users = useFlatUsers()
   return useMemo(() => {

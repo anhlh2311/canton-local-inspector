@@ -90,6 +90,19 @@ export interface PartyDetails {
 
 export interface PartyResponse {
   partyDetails: PartyDetails[]
+  nextPageToken?: string
+}
+
+export interface MergedPartyEntry {
+  partyId: string
+  partyHint: string
+  displayName?: string
+  isLocal: boolean
+  accessRights?: string[]
+  userId?: string
+  userRights?: UserRight[]
+  isDeactivated?: boolean
+  annotations?: Record<string, string>
 }
 
 export interface ParticipantIdResponse {

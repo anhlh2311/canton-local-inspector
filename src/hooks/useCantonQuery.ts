@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query'
 import { useAtomValue } from 'jotai'
 import { selectedNodeAtom, refreshIntervalAtom } from '@/stores/nodeStore'
 import * as api from '@/api/canton'
@@ -100,6 +100,22 @@ export function useParticipantId() {
       return api.getParticipantId(node, token)
     },
     staleTime: 60000,
+  })
+}
+
+/** Paginated parties — fetches 200 per page, used by Parties Explorer.
+ *  NOT auto-refreshed to avoid hammering the server on large nodes. */
+export function usePaginatedParties(pageSize: number = 200) {
+  const node = useNodeConfig()
+  return useInfiniteQuery({
+    queryKey: ['parties-paginated', node.id, pageSize],
+    queryFn: async ({ pageParam }: { pageParam: string | undefined }) => {
+      const token = await getToken(node)
+      return api.listParties(node, token, pageSize, pageParam)
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextPageToken || undefined,
+    staleTime: 120000, // 2 min — don't refetch aggressively
   })
 }
 
