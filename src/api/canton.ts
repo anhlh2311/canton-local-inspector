@@ -212,9 +212,10 @@ export async function discoverAllContracts(
   return allContracts
 }
 
-/** Discover template IDs by trying multiple strategies:
- *  1. Query each known user's party with wildcard (users have fewer contracts)
- *  2. Collect all unique template IDs across successful queries */
+/** Discover template IDs using multiple strategies in parallel:
+ *  1. Query each user's party with wildcard (users have fewer contracts than DSO)
+ *  2. Collect all unique template IDs across successful queries
+ *  Runs queries concurrently (batches of 5) for speed. */
 async function discoverTemplateIds(
   node: NodeConfig,
   token: string,
@@ -224,20 +225,35 @@ async function discoverTemplateIds(
   const client = createJsonApiClient(node, token)
   const templateIds = new Set<string>()
 
+  function extractTemplateIds(contracts: ActiveContract[]) {
+    for (const c of contracts) {
+      const tid = c?.contractEntry?.JsActiveContract?.createdEvent?.templateId
+      if (tid) templateIds.add(tid)
+    }
+  }
+
   // Get all users to find parties with fewer contracts
+  let parties: string[]
   try {
     const usersRes = await listAllUsers(node, token, { batchSize: 100, maxUsers: 50 })
-    const parties = new Set<string>()
+    const partySet = new Set<string>()
     for (const entry of usersRes.users ?? []) {
       const u = (entry as Record<string, unknown>)?.user as Record<string, unknown> | undefined
       const party = ((u?.primaryParty ?? (entry as Record<string, unknown>)?.primaryParty) as string) ?? ''
-      if (party) parties.add(party)
+      if (party) partySet.add(party)
     }
+    parties = [...partySet]
+  } catch {
+    return templateIds
+  }
 
-    // Try wildcard on each user's party — most will have <200 contracts
-    for (const party of parties) {
-      try {
-        const res = await client.post('/v2/state/active-contracts', {
+  // Query parties in parallel batches of 5 for speed
+  const BATCH_SIZE = 5
+  for (let i = 0; i < parties.length; i += BATCH_SIZE) {
+    const batch = parties.slice(i, i + BATCH_SIZE)
+    const results = await Promise.allSettled(
+      batch.map((party) =>
+        client.post('/v2/state/active-contracts', {
           filter: {
             filtersByParty: {
               [party]: {
@@ -250,16 +266,14 @@ async function discoverTemplateIds(
           verbose: false,
           activeAtOffset: offset,
         })
-        for (const c of res.data as ActiveContract[]) {
-          const tid = c?.contractEntry?.JsActiveContract?.createdEvent?.templateId
-          if (tid) templateIds.add(tid)
-        }
-      } catch {
-        // This party also has >200 contracts, skip it
+      )
+    )
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        extractTemplateIds(result.value.data as ActiveContract[])
       }
+      // Skip failed queries (party has >200 contracts)
     }
-  } catch {
-    // Failed to list users
   }
 
   return templateIds
