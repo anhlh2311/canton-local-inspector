@@ -116,9 +116,10 @@ The app automatically grants `CanReadAsAnyParty` rights to the authenticated use
 Canton's JSON API limits active contract responses to 200 elements per request. The inspector handles this automatically:
 
 1. **Phase 1**: Wildcard query — if total contracts for the party < 200, returns everything in one shot
-2. **Phase 2**: If the wildcard hits the 200 limit, falls back to per-package template queries by fetching the package list first, then querying each package individually
+2. **Phase 2**: If the wildcard hits the 200 limit (common for DSO parties on devnet/mainnet), discovers template IDs by querying individual user parties (which typically have far fewer contracts). User parties act as a "template directory".
+3. **Phase 3**: Queries each discovered template individually against the original target party — per-template counts are usually well under 200.
 
-This ensures template discovery and package discovery work on nodes with any number of contracts.
+If all parties exceed the limit, the UI falls back to manual template entry in the Contract Explorer.
 
 ## Canton API Endpoints Used
 

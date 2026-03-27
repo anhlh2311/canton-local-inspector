@@ -132,8 +132,18 @@ export async function getActiveContracts(node: NodeConfig, token: string, reques
   }
 }
 
-/** Paginated wildcard discovery: queries packages first, then fetches contracts per template.
- *  This avoids the 200-contract limit by splitting into per-template queries. */
+function isLimitError(err: unknown): boolean {
+  const axiosErr = err as { response?: { status?: number; data?: { code?: string } } }
+  return (
+    axiosErr.response?.status === 413 ||
+    axiosErr.response?.data?.code === 'JSON_API_MAXIMUM_LIST_ELEMENTS_NUMBER_REACHED'
+  )
+}
+
+/** Discover all active contracts for a party, handling the 200-contract node limit.
+ *  Phase 1: Try wildcard query (works if <200 contracts).
+ *  Phase 2: If limit hit, discover template IDs by querying known users' parties
+ *           (which have fewer contracts), then query each template individually. */
 export async function discoverAllContracts(
   node: NodeConfig,
   token: string,
@@ -143,7 +153,7 @@ export async function discoverAllContracts(
   const ledgerEnd = await client.get('/v2/state/ledger-end')
   const offset = ledgerEnd.data.offset
 
-  // First try wildcard — works if total contracts < 200
+  // Phase 1: Try wildcard — works if total contracts < 200
   try {
     const res = await client.post('/v2/state/active-contracts', {
       filter: {
@@ -160,22 +170,23 @@ export async function discoverAllContracts(
     })
     return res.data as ActiveContract[]
   } catch (err: unknown) {
-    const axiosErr = err as { response?: { status?: number; data?: { code?: string } } }
-    if (
-      axiosErr.response?.status !== 413 &&
-      axiosErr.response?.data?.code !== 'JSON_API_MAXIMUM_LIST_ELEMENTS_NUMBER_REACHED'
-    ) {
-      throw err
-    }
+    if (!isLimitError(err)) throw err
   }
 
-  // Wildcard hit the limit — fall back to per-package discovery
-  // Get all packages, then try each one with a wildcard scoped to that package
-  // This works because per-package contract counts are usually < 200
-  const packages = await listPackages(node, token)
-  const allContracts: ActiveContract[] = []
+  // Phase 2: Wildcard hit the 200 limit.
+  // Discover template IDs by querying other parties on this node (users typically
+  // have far fewer contracts than the DSO party). Then query each template for
+  // the target party individually.
+  const templateIds = await discoverTemplateIds(node, token, partyId, offset)
 
-  for (const packageId of packages.packageIds) {
+  if (templateIds.size === 0) {
+    console.warn('[Canton Inspector] Could not discover templates — node has >200 contracts per party. Use manual template query.')
+    return []
+  }
+
+  // Query each template individually — per-template counts are usually well under 200
+  const allContracts: ActiveContract[] = []
+  for (const templateId of templateIds) {
     try {
       const res = await client.post('/v2/state/active-contracts', {
         filter: {
@@ -183,13 +194,7 @@ export async function discoverAllContracts(
             [partyId]: {
               cumulative: [{
                 identifierFilter: {
-                  TemplateFilter: {
-                    value: {
-                      // Use package-level wildcard: "packageId:*" format
-                      templateId: packageId,
-                      includeCreatedEventBlob: false,
-                    }
-                  }
+                  TemplateFilter: { value: { templateId, includeCreatedEventBlob: false } }
                 }
               }]
             }
@@ -198,14 +203,66 @@ export async function discoverAllContracts(
         verbose: true,
         activeAtOffset: offset,
       })
-      const contracts = res.data as ActiveContract[]
-      allContracts.push(...contracts)
+      allContracts.push(...(res.data as ActiveContract[]))
     } catch {
-      // Skip packages that don't have matching templates for this party
+      // Skip templates that fail (e.g., a single template with >200 instances)
     }
   }
 
   return allContracts
+}
+
+/** Discover template IDs by trying multiple strategies:
+ *  1. Query each known user's party with wildcard (users have fewer contracts)
+ *  2. Collect all unique template IDs across successful queries */
+async function discoverTemplateIds(
+  node: NodeConfig,
+  token: string,
+  _targetPartyId: string,
+  offset: string | number,
+): Promise<Set<string>> {
+  const client = createJsonApiClient(node, token)
+  const templateIds = new Set<string>()
+
+  // Get all users to find parties with fewer contracts
+  try {
+    const usersRes = await listAllUsers(node, token, { batchSize: 100, maxUsers: 50 })
+    const parties = new Set<string>()
+    for (const entry of usersRes.users ?? []) {
+      const u = (entry as Record<string, unknown>)?.user as Record<string, unknown> | undefined
+      const party = ((u?.primaryParty ?? (entry as Record<string, unknown>)?.primaryParty) as string) ?? ''
+      if (party) parties.add(party)
+    }
+
+    // Try wildcard on each user's party — most will have <200 contracts
+    for (const party of parties) {
+      try {
+        const res = await client.post('/v2/state/active-contracts', {
+          filter: {
+            filtersByParty: {
+              [party]: {
+                cumulative: [{
+                  identifierFilter: { WildcardFilter: { value: { includeCreatedEventBlob: false } } }
+                }]
+              }
+            }
+          },
+          verbose: false,
+          activeAtOffset: offset,
+        })
+        for (const c of res.data as ActiveContract[]) {
+          const tid = c?.contractEntry?.JsActiveContract?.createdEvent?.templateId
+          if (tid) templateIds.add(tid)
+        }
+      } catch {
+        // This party also has >200 contracts, skip it
+      }
+    }
+  } catch {
+    // Failed to list users
+  }
+
+  return templateIds
 }
 
 // ---- Users & Parties ----
