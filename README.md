@@ -181,6 +181,68 @@ src/
 └── main.tsx                   # Entry point with providers
 ```
 
-## Production Deployment
+## Vercel Deployment
 
-For production, replace the Vite dev proxy with a reverse proxy (nginx, Caddy, etc.) that routes API requests to the appropriate Canton node endpoints. Auth credentials should be configured via environment variables rather than stored in localStorage.
+The app supports deployment to Vercel with secure server-side auth. OAuth2 client secrets never reach the browser.
+
+### Architecture
+
+| Component | Local Dev | Vercel Production |
+|-----------|-----------|-------------------|
+| API Proxy | Vite dev proxy (`/proxy/remote/...`) | Serverless function (`/api/proxy/...`) |
+| OAuth2 Token | Client-side via Vite proxy | Serverless function (`/api/auth/token`) |
+| Client Secret | In browser (dev only) | Vercel env var (server-side only) |
+| Node Config | 4 local quickstart nodes | Pre-configured from `VITE_*` env vars |
+
+### Environment Variables
+
+Set these in Vercel project settings:
+
+**Public (bundled in client — safe to expose):**
+```bash
+VITE_DEPLOY_ENV=vercel
+VITE_NODE_NAME=Devnet Validator
+VITE_NODE_COLOR=#ec4899
+VITE_JSON_API_URL=http://146.59.110.100:7575/api/json-api
+VITE_VALIDATOR_API_URL=http://146.59.110.100:5003
+VITE_AUTH_MODE=oauth2
+```
+
+**Secret (server-side only — never in client bundle):**
+```bash
+CANTON_JSON_API_URL=http://146.59.110.100:7575/api/json-api
+CANTON_VALIDATOR_API_URL=http://146.59.110.100:5003
+CANTON_OAUTH2_TOKEN_URL=https://your-tenant.auth0.com/oauth/token
+CANTON_OAUTH2_CLIENT_ID=your-client-id
+CANTON_OAUTH2_CLIENT_SECRET=your-client-secret
+CANTON_OAUTH2_AUDIENCE=https://your-api-audience
+CANTON_OAUTH2_VALIDATOR_AUDIENCE=https://your-validator-audience
+```
+
+### Deploy
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy (will prompt for env vars on first deploy)
+vercel
+
+# Or link to existing project and deploy
+vercel --prod
+```
+
+### Serverless Functions
+
+| Function | Purpose |
+|----------|---------|
+| `/api/auth/token` | OAuth2 client credentials exchange — reads `CANTON_OAUTH2_*` secrets |
+| `/api/proxy/[...path]` | Forwards requests to Canton APIs — validates against allowed target URLs |
+
+### Local Development
+
+Local dev is unaffected. `VITE_DEPLOY_ENV` defaults to `local` (or is unset), which uses the Vite proxy as before. To test Vercel functions locally:
+
+```bash
+vercel dev
+```

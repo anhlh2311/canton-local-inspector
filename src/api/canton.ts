@@ -15,32 +15,38 @@ import type {
   DsoPartyResponse,
 } from '@/types/canton'
 
+const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
+
+function encodeOriginBase64url(origin: string): string {
+  return btoa(origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function buildFullUrl(url: string, port: number): string {
+  try {
+    const parsed = new URL(url)
+    if (!parsed.port && port) parsed.port = String(port)
+    return parsed.href.replace(/\/$/, '')
+  } catch {
+    return port ? `${url}:${port}` : url
+  }
+}
+
 function getProxyBase(url: string, port: number, nodeId: string, type: 'json' | 'validator'): string {
-  // For default local nodes, use the named proxy
+  const fullUrl = buildFullUrl(url, port)
+  const parsed = new URL(fullUrl)
+  const encoded = encodeOriginBase64url(parsed.origin)
+  const pathPrefix = parsed.pathname === '/' ? '' : parsed.pathname
+
+  if (isVercel) {
+    // On Vercel: use serverless proxy /api/proxy/{base64url-origin}{pathPrefix}
+    return `/api/proxy/${encoded}${pathPrefix}`
+  }
+
+  // Local dev: use Vite proxy
   if (url === 'http://localhost') {
     return `/proxy/${type}/${nodeId}`
   }
-  // For remote nodes, build the full URL and split into origin (for proxy routing) + path prefix
-  // Supports URLs like "http://host:port/api/json-api" where /api/json-api is a path prefix
-  let fullUrl: string
-  try {
-    const parsed = new URL(url)
-    // If URL already has a port, use it; otherwise append the configured port
-    if (!parsed.port && port) {
-      parsed.port = String(port)
-    }
-    fullUrl = parsed.href.replace(/\/$/, '') // remove trailing slash
-  } catch {
-    // Fallback: simple concatenation
-    fullUrl = port ? `${url}:${port}` : url
-  }
 
-  // Split into origin (scheme+host+port) and path prefix
-  const parsed = new URL(fullUrl)
-  const origin = parsed.origin
-  const pathPrefix = parsed.pathname === '/' ? '' : parsed.pathname
-
-  const encoded = btoa(origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
   return `/proxy/remote/${encoded}${pathPrefix}`
 }
 
@@ -437,11 +443,19 @@ const tokenCache: Record<string, { token: string; expiresAt: number }> = {}
 
 async function fetchOAuth2Token(node: NodeConfig, audience: string): Promise<string> {
   if (node.auth.mode !== 'oauth2') throw new Error('Not OAuth2')
+
+  if (isVercel) {
+    // On Vercel: use serverless function — secrets stay server-side
+    const res = await axios.post('/api/auth/token', { audience })
+    return res.data.access_token
+  }
+
+  // Local dev: proxy through Vite (client has the credentials in node config)
   const { tokenUrl, clientId, clientSecret } = node.auth
   const urlObj = new URL(tokenUrl)
   const origin = urlObj.origin
   const pathname = urlObj.pathname
-  const encoded = btoa(origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  const encoded = encodeOriginBase64url(origin)
 
   const res = await axios.post(
     `/proxy/oauth2-token/${encoded}${pathname}`,
