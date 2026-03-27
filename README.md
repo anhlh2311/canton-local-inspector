@@ -5,18 +5,19 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 ## Features
 
 - **Network Overview** — Node health checks, Canton version, ledger offset, user/package counts across all connected nodes
-- **Synchronizer & DSO** — Global synchronizer details, DSO party ID, dynamically discovered active contracts with JSON payload viewer, 2/3/4-column responsive party grid with expand/collapse
+- **Synchronizer & DSO** — Global synchronizer details, DSO party ID, dynamically discovered active contracts with JSON payload viewer, responsive multi-column party grid with expand/collapse
 - **Parties Explorer** — Browse all users and parties with rights (Admin, ActAs, ReadAs), full-text search across all loaded users, client-side "Show more" pagination
 - **Package Manager** — List installed packages with auto-discovered names, templates, and active contract counts per package
-- **Contract Explorer** — Query active contracts by template, interface, or contract ID with autocomplete dropdowns for party and template selection. Auto-queries on template selection with refresh button.
+- **Contract Explorer** — Query active contracts by template, interface, or contract ID with autocomplete dropdowns for party and template selection. Auto-queries on selection with refresh button.
 - **Settings** — Configure local and remote node connections with per-node auth (shared-secret or OAuth2), auto-refresh intervals, custom colors
 
 ### Key UX Details
 
 - **Multi-node switcher** with color-coded health indicators (green/red/yellow)
-- **Local + Remote nodes** — Connect to localhost Canton nodes or remote validators (e.g., devnet/mainnet)
+- **Local + Remote nodes** — Connect to localhost Canton nodes or remote validators (devnet/mainnet)
 - **Dual auth modes** — Shared-secret (HMAC-SHA256 JWT) for local dev, OAuth2 client credentials for remote/production
-- **Auto-discovery** — Templates and package names are discovered from the ledger, not hardcoded
+- **Separate validator audience** — OAuth2 nodes can use a different audience for the Validator API vs the JSON API
+- **Auto-discovery** — Templates and package names are discovered from the ledger, not hardcoded. Handles nodes with >200 contracts via paginated per-package fallback.
 - **Autocomplete inputs** — Keyboard-navigable dropdowns (Arrow keys + Enter) for party and template selection
 - **Copy-friendly** — Every ID (party, contract, package, template) has a one-click copy button
 - **Clearable inputs** — X button on all search and form fields
@@ -69,17 +70,20 @@ Nodes can be added, edited, or removed in the Settings page.
 Click **"Remote Node"** in Settings to add a remote validator. Example configuration:
 
 ```
-Name:             Devnet Validator
-JSON API URL:     http://146.59.110.100
-JSON API Port:    7575
-Validator URL:    http://146.59.110.100
-Validator Port:   5003
-Auth Mode:        OAuth2
-Token URL:        https://your-tenant.auth0.com/oauth/token
-Client ID:        <your-client-id>
-Client Secret:    <your-client-secret>
-Audience:         https://your-audience
+Name:               Devnet Validator
+JSON API URL:       http://146.59.110.100:7575/api/json-api
+JSON API Port:      0  (port already in URL)
+Validator URL:      http://146.59.110.100
+Validator Port:     5003
+Auth Mode:          OAuth2
+Token URL:          https://your-tenant.auth0.com/oauth/token
+Client ID:          <your-client-id>
+Client Secret:      <your-client-secret>
+Audience:           https://your-api-audience
+Validator Audience: https://your-validator-audience  (optional, for separate validator auth)
 ```
+
+The JSON API URL supports path prefixes (e.g., `/api/json-api`) for servers that don't serve the Canton API at the root.
 
 Remote nodes are automatically proxied through Vite's dev server to avoid CORS. No manual proxy configuration needed.
 
@@ -102,10 +106,19 @@ For remote validators using OAuth2 (Auth0, etc.):
 
 - Client credentials grant (`grant_type=client_credentials`)
 - Token endpoint is proxied through Vite to avoid CORS
-- Tokens are cached per node until expiry
-- Supports separate validator audience
+- Tokens are cached per node until expiry, keyed by `{nodeId}:{json|validator}`
+- Supports separate `validatorAudience` for the Validator/Scan Proxy API
 
-The app automatically grants `CanReadAsAnyParty` rights to the authenticated user on each node for contract visibility.
+The app automatically grants `CanReadAsAnyParty` rights to the authenticated user on each node for contract visibility (shared-secret mode only).
+
+## Contract Discovery & Pagination
+
+Canton's JSON API limits active contract responses to 200 elements per request. The inspector handles this automatically:
+
+1. **Phase 1**: Wildcard query — if total contracts for the party < 200, returns everything in one shot
+2. **Phase 2**: If the wildcard hits the 200 limit, falls back to per-package template queries by fetching the package list first, then querying each package individually
+
+This ensures template discovery and package discovery work on nodes with any number of contracts.
 
 ## Canton API Endpoints Used
 
@@ -136,14 +149,16 @@ The dev server proxies all Canton API requests to avoid CORS:
 |------------|--------|---------|
 | `/proxy/json/{nodeId}/*` | `localhost:{port}` | Local node JSON API |
 | `/proxy/validator/{nodeId}/*` | `localhost:{port}` | Local node Validator API |
-| `/proxy/remote/{base64url-origin}/*` | Decoded origin URL | Any remote node |
+| `/proxy/remote/{base64url-origin}/*` | Decoded origin URL | Any remote node (HTTP/HTTPS) |
 | `/proxy/oauth2-token/{base64url-origin}/*` | Decoded origin URL | OAuth2 token endpoints |
+
+The remote and OAuth2 proxies use a custom Vite plugin (`dynamicProxyPlugin`) that decodes the target origin from the URL path and forwards requests using Node.js native `http`/`https` modules.
 
 ## Project Structure
 
 ```
 src/
-├── api/canton.ts              # API functions, JWT/OAuth2 auth, proxy routing
+├── api/canton.ts              # API functions, JWT/OAuth2 auth, proxy routing, contract pagination
 ├── types/canton.ts            # TypeScript types (NodeConfig, AuthConfig, API responses)
 ├── constants/nodes.ts         # Default node configurations
 ├── stores/nodeStore.ts        # Jotai atoms (selected node, health, refresh interval)

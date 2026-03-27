@@ -245,14 +245,18 @@ function NodeConfigCard({
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
             <div>
               <span className="text-muted-foreground">JSON API: </span>
-              <span className="font-mono">
-                {node.jsonApiUrl === 'http://localhost' ? `:${node.jsonApiPort}` : `${node.jsonApiUrl}:${node.jsonApiPort}`}
+              <span className="font-mono text-[10px]">
+                {node.jsonApiUrl === 'http://localhost'
+                  ? `localhost:${node.jsonApiPort}`
+                  : node.jsonApiPort ? `${node.jsonApiUrl}:${node.jsonApiPort}` : node.jsonApiUrl}
               </span>
             </div>
             <div>
               <span className="text-muted-foreground">Validator: </span>
-              <span className="font-mono">
-                {node.validatorApiUrl === 'http://localhost' ? `:${node.validatorApiPort}` : `${node.validatorApiUrl}:${node.validatorApiPort}`}
+              <span className="font-mono text-[10px]">
+                {node.validatorApiUrl === 'http://localhost'
+                  ? `localhost:${node.validatorApiPort}`
+                  : node.validatorApiPort ? `${node.validatorApiUrl}:${node.validatorApiPort}` : node.validatorApiUrl}
               </span>
             </div>
             {node.adminUser && (

@@ -121,7 +121,7 @@ export function useDsoPartyId() {
   return useQuery({
     queryKey: ['dso-party', node.id],
     queryFn: async () => {
-      const token = await getToken(node)
+      const token = await api.getValidatorAuthToken(node)
       return api.getDsoPartyId(node, token)
     },
     staleTime: 60000,
@@ -140,15 +140,15 @@ export function useActiveContracts(request: ActiveContractsRequest | null, key?:
   })
 }
 
-// Discover all active contracts for a party using wildcard filter, then group by template
+// Discover all active contracts for a party, then group by template
+// Uses paginated discovery to handle nodes with >200 contracts
 export function useDiscoverTemplates(partyId: string | undefined) {
   const node = useNodeConfig()
   return useQuery({
     queryKey: ['discover-templates', node.id, partyId],
     queryFn: async () => {
       const token = await getToken(node)
-      const request = api.buildWildcardFilter(partyId!)
-      const contracts = await api.getActiveContracts(node, token, request)
+      const contracts = await api.discoverAllContracts(node, token, partyId!)
       // Group contracts by templateId
       const templateMap: Record<string, { templateId: string; packageName: string; count: number }> = {}
       for (const c of contracts as ActiveContract[]) {

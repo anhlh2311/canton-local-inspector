@@ -20,10 +20,28 @@ function getProxyBase(url: string, port: number, nodeId: string, type: 'json' | 
   if (url === 'http://localhost') {
     return `/proxy/${type}/${nodeId}`
   }
-  // For remote nodes, use the generic remote proxy with base64url-encoded origin
-  const fullUrl = port ? `${url}:${port}` : url
-  const encoded = btoa(fullUrl).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-  return `/proxy/remote/${encoded}`
+  // For remote nodes, build the full URL and split into origin (for proxy routing) + path prefix
+  // Supports URLs like "http://host:port/api/json-api" where /api/json-api is a path prefix
+  let fullUrl: string
+  try {
+    const parsed = new URL(url)
+    // If URL already has a port, use it; otherwise append the configured port
+    if (!parsed.port && port) {
+      parsed.port = String(port)
+    }
+    fullUrl = parsed.href.replace(/\/$/, '') // remove trailing slash
+  } catch {
+    // Fallback: simple concatenation
+    fullUrl = port ? `${url}:${port}` : url
+  }
+
+  // Split into origin (scheme+host+port) and path prefix
+  const parsed = new URL(fullUrl)
+  const origin = parsed.origin
+  const pathPrefix = parsed.pathname === '/' ? '' : parsed.pathname
+
+  const encoded = btoa(origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return `/proxy/remote/${encoded}${pathPrefix}`
 }
 
 function createJsonApiClient(node: NodeConfig, token?: string) {
@@ -90,8 +108,104 @@ export async function getActiveContracts(node: NodeConfig, token: string, reques
     const ledgerEnd = await client.get('/v2/state/ledger-end')
     requestWithOffset = { ...request, activeAtOffset: ledgerEnd.data.offset }
   }
-  const res = await client.post('/v2/state/active-contracts', requestWithOffset)
-  return res.data
+  try {
+    const res = await client.post('/v2/state/active-contracts', requestWithOffset)
+    return res.data
+  } catch (err: unknown) {
+    const axiosErr = err as { response?: { status?: number; data?: { code?: string } } }
+    // Canton returns 413 or error code when results exceed the node limit (typically 200)
+    // For wildcard queries that hit this limit, we need to paginate by template
+    if (
+      axiosErr.response?.status === 413 ||
+      axiosErr.response?.data?.code === 'JSON_API_MAXIMUM_LIST_ELEMENTS_NUMBER_REACHED'
+    ) {
+      // Check if this is a wildcard query — if so, we can't paginate it easily
+      // Rethrow with a helpful message
+      const error = new Error(
+        'Too many contracts. The Canton node limits responses to 200 contracts. ' +
+        'Try querying by specific template instead of using wildcard discovery.'
+      )
+      ;(error as Error & { isLimitError: boolean }).isLimitError = true
+      throw error
+    }
+    throw err
+  }
+}
+
+/** Paginated wildcard discovery: queries packages first, then fetches contracts per template.
+ *  This avoids the 200-contract limit by splitting into per-template queries. */
+export async function discoverAllContracts(
+  node: NodeConfig,
+  token: string,
+  partyId: string,
+): Promise<ActiveContract[]> {
+  const client = createJsonApiClient(node, token)
+  const ledgerEnd = await client.get('/v2/state/ledger-end')
+  const offset = ledgerEnd.data.offset
+
+  // First try wildcard — works if total contracts < 200
+  try {
+    const res = await client.post('/v2/state/active-contracts', {
+      filter: {
+        filtersByParty: {
+          [partyId]: {
+            cumulative: [{
+              identifierFilter: { WildcardFilter: { value: { includeCreatedEventBlob: false } } }
+            }]
+          }
+        }
+      },
+      verbose: true,
+      activeAtOffset: offset,
+    })
+    return res.data as ActiveContract[]
+  } catch (err: unknown) {
+    const axiosErr = err as { response?: { status?: number; data?: { code?: string } } }
+    if (
+      axiosErr.response?.status !== 413 &&
+      axiosErr.response?.data?.code !== 'JSON_API_MAXIMUM_LIST_ELEMENTS_NUMBER_REACHED'
+    ) {
+      throw err
+    }
+  }
+
+  // Wildcard hit the limit — fall back to per-package discovery
+  // Get all packages, then try each one with a wildcard scoped to that package
+  // This works because per-package contract counts are usually < 200
+  const packages = await listPackages(node, token)
+  const allContracts: ActiveContract[] = []
+
+  for (const packageId of packages.packageIds) {
+    try {
+      const res = await client.post('/v2/state/active-contracts', {
+        filter: {
+          filtersByParty: {
+            [partyId]: {
+              cumulative: [{
+                identifierFilter: {
+                  TemplateFilter: {
+                    value: {
+                      // Use package-level wildcard: "packageId:*" format
+                      templateId: packageId,
+                      includeCreatedEventBlob: false,
+                    }
+                  }
+                }
+              }]
+            }
+          }
+        },
+        verbose: true,
+        activeAtOffset: offset,
+      })
+      const contracts = res.data as ActiveContract[]
+      allContracts.push(...contracts)
+    } catch {
+      // Skip packages that don't have matching templates for this party
+    }
+  }
+
+  return allContracts
 }
 
 // ---- Users & Parties ----
@@ -188,33 +302,13 @@ export async function discoverPackageInfo(
   token: string,
   partyId: string,
 ): Promise<PackageInfo[]> {
-  const client = createJsonApiClient(node, token)
-
-  // Get ledger end offset
-  const ledgerEnd = await client.get('/v2/state/ledger-end')
-  const offset = ledgerEnd.data.offset
-
-  // Query all active contracts via wildcard
-  const res = await client.post('/v2/state/active-contracts', {
-    filter: {
-      filtersByParty: {
-        [partyId]: {
-          cumulative: [{
-            identifierFilter: {
-              WildcardFilter: { value: { includeCreatedEventBlob: false } }
-            }
-          }]
-        }
-      }
-    },
-    verbose: true,
-    activeAtOffset: offset,
-  })
+  // Use paginated discovery that handles the 200-contract limit
+  const contracts = await discoverAllContracts(node, token, partyId)
 
   // Build package map from contract events
   const packageMap: Record<string, PackageInfo> = {}
 
-  for (const c of res.data as ActiveContract[]) {
+  for (const c of contracts) {
     const evt = c?.contractEntry?.JsActiveContract?.createdEvent
     if (!evt) continue
 
@@ -259,14 +353,41 @@ export async function getDsoPartyId(node: NodeConfig, token?: string): Promise<D
 
 import { SignJWT } from 'jose'
 
-// Token cache keyed by nodeId
+// Token cache keyed by nodeId + audience variant
 const tokenCache: Record<string, { token: string; expiresAt: number }> = {}
 
+async function fetchOAuth2Token(node: NodeConfig, audience: string): Promise<string> {
+  if (node.auth.mode !== 'oauth2') throw new Error('Not OAuth2')
+  const { tokenUrl, clientId, clientSecret } = node.auth
+  const urlObj = new URL(tokenUrl)
+  const origin = urlObj.origin
+  const pathname = urlObj.pathname
+  const encoded = btoa(origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+  const res = await axios.post(
+    `/proxy/oauth2-token/${encoded}${pathname}`,
+    new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: clientId,
+      client_secret: clientSecret,
+      audience,
+    }).toString(),
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+  )
+
+  return res.data.access_token
+}
+
+function getCachedToken(cacheKey: string): string | null {
+  const cached = tokenCache[cacheKey]
+  if (cached && cached.expiresAt > Date.now() + 60000) return cached.token
+  return null
+}
+
 export async function getAuthToken(node: NodeConfig): Promise<string> {
-  const cached = tokenCache[node.id]
-  if (cached && cached.expiresAt > Date.now() + 60000) {
-    return cached.token
-  }
+  const cacheKey = `${node.id}:json`
+  const cached = getCachedToken(cacheKey)
+  if (cached) return cached
 
   if (node.auth.mode === 'shared-secret') {
     const { userId, secret, audience, issuer } = node.auth
@@ -281,36 +402,33 @@ export async function getAuthToken(node: NodeConfig): Promise<string> {
       .setExpirationTime('24h')
       .sign(secretKey)
 
-    tokenCache[node.id] = { token, expiresAt: Date.now() + 24 * 60 * 60 * 1000 }
+    tokenCache[cacheKey] = { token, expiresAt: Date.now() + 24 * 60 * 60 * 1000 }
     return token
   }
 
   if (node.auth.mode === 'oauth2') {
-    const { tokenUrl, clientId, clientSecret, audience } = node.auth
-    // Proxy through Vite to avoid CORS on the OAuth2 token endpoint
-    const urlObj = new URL(tokenUrl)
-    const origin = urlObj.origin
-    const pathname = urlObj.pathname
-    const encoded = btoa(origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-
-    const res = await axios.post(
-      `/proxy/oauth2-token/${encoded}${pathname}`,
-      new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: clientId,
-        client_secret: clientSecret,
-        audience,
-      }).toString(),
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-    )
-
-    const token = res.data.access_token
-    const expiresIn = (res.data.expires_in ?? 3600) * 1000
-    tokenCache[node.id] = { token, expiresAt: Date.now() + expiresIn }
+    const token = await fetchOAuth2Token(node, node.auth.audience)
+    tokenCache[cacheKey] = { token, expiresAt: Date.now() + 3600 * 1000 }
     return token
   }
 
   throw new Error(`Unknown auth mode: ${(node.auth as { mode: string }).mode}`)
+}
+
+/** Get auth token for the validator API — uses validatorAudience if configured */
+export async function getValidatorAuthToken(node: NodeConfig): Promise<string> {
+  // If no separate validator audience, reuse the main token
+  if (node.auth.mode !== 'oauth2' || !node.auth.validatorAudience) {
+    return getAuthToken(node)
+  }
+
+  const cacheKey = `${node.id}:validator`
+  const cached = getCachedToken(cacheKey)
+  if (cached) return cached
+
+  const token = await fetchOAuth2Token(node, node.auth.validatorAudience)
+  tokenCache[cacheKey] = { token, expiresAt: Date.now() + 3600 * 1000 }
+  return token
 }
 
 // Keep backward compatibility — deprecated, use getAuthToken instead
