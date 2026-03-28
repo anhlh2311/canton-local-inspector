@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 /**
- * Canton API proxy serverless function.
+ * Canton API proxy serverless function (catch-all).
  * URL format: /api/proxy/{base64url-encoded-origin}/{rest-of-path}
  *
  * Example: /api/proxy/aHR0cDovLzE0Ni41OS4xMTAuMTAwOjc1NzU/api/json-api/v2/version
@@ -23,7 +23,6 @@ function base64urlDecode(str: string): string {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
@@ -31,10 +30,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(204).end()
   }
 
-  // Parse path segments: [base64url-encoded-origin, ...rest]
   const pathSegments = req.query.path
   if (!pathSegments || !Array.isArray(pathSegments) || pathSegments.length === 0) {
-    return res.status(400).json({ error: 'Missing proxy path' })
+    return res.status(400).json({ error: 'Missing proxy path segments' })
   }
 
   const encodedOrigin = pathSegments[0]
