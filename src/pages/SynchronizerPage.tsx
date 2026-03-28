@@ -19,17 +19,41 @@ import {
 } from '@/hooks/useCantonQuery'
 import { buildTemplateFilter } from '@/api/canton'
 
+interface MergedTemplate {
+  shortName: string
+  packageName: string
+  totalCount: number
+  templateIds: string[] // all full templateIds with this short name
+}
+
 function DsoContractsPanel({ partyId }: { partyId: string }) {
   const discovery = useDiscoverTemplates(partyId)
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null)
+  const [selectedName, setSelectedName] = useState<string | null>(null)
   const [templateSearch, setTemplateSearch] = useState('')
 
-  const selectedFilter = selectedTemplateId ? buildTemplateFilter(partyId, selectedTemplateId) : null
-  const selectedContracts = useActiveContracts(selectedFilter, `dso-${selectedTemplateId}`)
+  // Merge templates with same short name (different package versions)
+  const mergedTemplates: MergedTemplate[] = (() => {
+    const raw = discovery.data ?? []
+    const byName: Record<string, MergedTemplate> = {}
+    for (const t of raw) {
+      const shortName = t.templateId.split(':').pop() ?? t.templateId
+      const pkgName = t.packageName || t.templateId.split(':')[0]
+      if (!byName[shortName]) {
+        byName[shortName] = { shortName, packageName: pkgName, totalCount: 0, templateIds: [] }
+      }
+      byName[shortName].totalCount += t.count
+      byName[shortName].templateIds.push(t.templateId)
+    }
+    return Object.values(byName).sort((a, b) => b.totalCount - a.totalCount)
+  })()
 
-  const templates = discovery.data ?? []
-  const filteredTemplates = templates.filter(
-    (t) => t.templateId.toLowerCase().includes(templateSearch.toLowerCase()) ||
+  // When a merged template is selected, pick the first templateId to query
+  const selected = mergedTemplates.find((t) => t.shortName === selectedName)
+  const selectedFilter = selected ? buildTemplateFilter(partyId, selected.templateIds[0]) : null
+  const selectedContracts = useActiveContracts(selectedFilter, `dso-${selectedName}`)
+
+  const filteredTemplates = mergedTemplates.filter(
+    (t) => t.shortName.toLowerCase().includes(templateSearch.toLowerCase()) ||
            t.packageName.toLowerCase().includes(templateSearch.toLowerCase())
   )
 
@@ -38,13 +62,13 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
       {discovery.isLoading && <LoadingSpinner text="Discovering templates on ledger..." className="py-8" />}
       {discovery.error && <ErrorDisplay error={discovery.error as Error} />}
 
-      {templates.length > 0 && (
+      {mergedTemplates.length > 0 && (
         <>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">
-                {templates.length} template(s) discovered with active contracts
+                {mergedTemplates.length} template(s) discovered with active contracts
               </span>
             </div>
             <SearchInput
@@ -57,22 +81,20 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {filteredTemplates.map((t) => {
-              const shortName = t.templateId.split(':').pop() ?? t.templateId
-              const pkgName = t.packageName || t.templateId.split(':')[0]
-              const isSelected = selectedTemplateId === t.templateId
+              const isSelected = selectedName === t.shortName
               return (
                 <Card
-                  key={t.templateId}
+                  key={t.shortName}
                   className={`cursor-pointer transition-colors hover:border-primary/50 ${isSelected ? 'border-primary' : ''}`}
-                  onClick={() => setSelectedTemplateId(isSelected ? null : t.templateId)}
+                  onClick={() => setSelectedName(isSelected ? null : t.shortName)}
                 >
                   <CardContent className="p-3">
                     <div className="flex items-center justify-between">
                       <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{shortName}</p>
-                        <p className="text-[10px] text-muted-foreground font-mono truncate">{pkgName}</p>
+                        <p className="text-sm font-medium truncate">{t.shortName}</p>
+                        <p className="text-[10px] text-muted-foreground font-mono truncate">{t.packageName}</p>
                       </div>
-                      <Badge variant="secondary" className="shrink-0 ml-2">{t.count}</Badge>
+                      <Badge variant="secondary" className="shrink-0 ml-2">{t.totalCount}</Badge>
                     </div>
                   </CardContent>
                 </Card>
@@ -82,12 +104,12 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
         </>
       )}
 
-      {templates.length === 0 && !discovery.isLoading && !discovery.error && (
+      {mergedTemplates.length === 0 && !discovery.isLoading && !discovery.error && (
         <EmptyState icon={FileCode} title="No active contracts" description="No active contracts found for this party" />
       )}
 
       {/* Selected template detail view */}
-      {selectedTemplateId && (() => {
+      {selected && (() => {
         if (selectedContracts.isLoading) return <LoadingSpinner text="Loading contracts..." className="py-4" />
         if (selectedContracts.error) return <ErrorDisplay error={selectedContracts.error as Error} />
         const contracts = (selectedContracts.data ?? []) as unknown as Record<string, unknown>[]
@@ -97,10 +119,10 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-mono">
-                {selectedTemplateId.split(':').pop()}
+                {selected.shortName}
               </CardTitle>
               <CardDescription>
-                {contracts.length} active contract(s) — {selectedTemplateId}
+                {contracts.length} active contract(s)
               </CardDescription>
             </CardHeader>
             <CardContent>
