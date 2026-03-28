@@ -5,8 +5,16 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Canton Local Inspector</title>
+    <script>
+      // Prevent flash: apply saved theme before React loads
+      const t = localStorage.getItem('canton-inspector-theme')
+      if (t) {
+        const theme = JSON.parse(t)
+        if (theme === 'light') document.documentElement.classList.remove('dark')
+      }
+    </script>
   </head>
-  <body class="bg-gray-950 text-gray-100">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

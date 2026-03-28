@@ -18,3 +18,6 @@ export const nodeHealthMapAtom = atom<Record<string, NodeHealth>>({})
 export const authTokensAtom = atomWithStorage<Record<string, string>>('canton-inspector-tokens', {})
 
 export const refreshIntervalAtom = atomWithStorage<number>('canton-inspector-refresh', 15000)
+
+export type Theme = 'dark' | 'light'
+export const themeAtom = atomWithStorage<Theme>('canton-inspector-theme', 'dark')
