@@ -47,9 +47,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Invalid base64url-encoded origin' })
   }
 
-  const fullUrl = targetOrigin + restPath
+  // Forward original query params (except our internal _path param)
+  const queryParams = new URLSearchParams()
+  for (const [key, value] of Object.entries(req.query)) {
+    if (key === '_path') continue
+    if (Array.isArray(value)) {
+      value.forEach((v) => queryParams.append(key, v))
+    } else if (value) {
+      queryParams.append(key, value)
+    }
+  }
+  const queryString = queryParams.toString()
+  const fullUrl = targetOrigin + restPath + (queryString ? `?${queryString}` : '')
 
-  if (!isAllowedTarget(fullUrl)) {
+  if (!isAllowedTarget(targetOrigin + restPath)) {
     return res.status(403).json({ error: `Target URL not allowed: ${targetOrigin}` })
   }
 
