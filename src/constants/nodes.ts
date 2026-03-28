@@ -73,7 +73,8 @@ function getVercelNode(): NodeConfig | null {
         tokenUrl: '',
         clientId: '',
         clientSecret: '',
-        audience: '',
+        audience: import.meta.env.VITE_AUDIENCE || '',
+        validatorAudience: import.meta.env.VITE_VALIDATOR_AUDIENCE || undefined,
       }
 
   return {
