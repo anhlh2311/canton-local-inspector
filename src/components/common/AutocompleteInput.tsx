@@ -12,6 +12,7 @@ export interface AutocompleteOption {
 interface AutocompleteInputProps {
   value: string
   onChange: (value: string) => void
+  onSubmit?: () => void
   options: AutocompleteOption[]
   placeholder?: string
   className?: string
@@ -21,6 +22,7 @@ interface AutocompleteInputProps {
 export function AutocompleteInput({
   value,
   onChange,
+  onSubmit,
   options,
   placeholder,
   className,
@@ -91,6 +93,9 @@ export function AutocompleteInput({
         e.preventDefault()
         if (highlightIndex >= 0 && highlightIndex < filtered.length) {
           handleSelect(filtered[highlightIndex])
+        } else if (onSubmit) {
+          setOpen(false)
+          onSubmit()
         }
         break
       case 'Escape':

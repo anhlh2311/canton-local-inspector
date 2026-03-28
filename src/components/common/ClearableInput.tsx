@@ -5,17 +5,19 @@ import { cn } from '@/lib/utils'
 interface ClearableInputProps {
   value: string
   onChange: (value: string) => void
+  onSubmit?: () => void
   placeholder?: string
   className?: string
 }
 
-export function ClearableInput({ value, onChange, placeholder, className }: ClearableInputProps) {
+export function ClearableInput({ value, onChange, onSubmit, placeholder, className }: ClearableInputProps) {
   return (
     <div className={cn("relative", className)}>
       <Input
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && onSubmit) onSubmit() }}
         className="pr-8"
       />
       {value && (

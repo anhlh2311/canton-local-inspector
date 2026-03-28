@@ -316,7 +316,7 @@ function PartyLookupTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <ClearableInput value={partyId} onChange={setPartyId} placeholder="Enter full party ID (e.g., hint::1220abc...)" className="flex-1 max-w-xl" />
+        <ClearableInput value={partyId} onChange={setPartyId} onSubmit={handleLookup} placeholder="Enter full party ID (e.g., hint::1220abc...)" className="flex-1 max-w-xl" />
         <Button onClick={handleLookup} disabled={!partyId.trim() || loading}>
           <Search className="h-4 w-4 mr-2" /> Lookup
         </Button>
