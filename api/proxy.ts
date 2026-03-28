@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 /**
- * Canton API proxy serverless function (catch-all).
- * URL format: /api/proxy/{base64url-encoded-origin}/{rest-of-path}
+ * Canton API proxy serverless function.
+ * Vercel rewrite: /api/proxy/{encoded}/{path...} → /api/proxy?_path={encoded}/{path...}
  *
  * Example: /api/proxy/aHR0cDovLzE0Ni41OS4xMTAuMTAwOjc1NzU/api/json-api/v2/version
  * → forwards to http://146.59.110.100:7575/api/json-api/v2/version
@@ -30,13 +30,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(204).end()
   }
 
-  const pathSegments = req.query.path
-  if (!pathSegments || !Array.isArray(pathSegments) || pathSegments.length === 0) {
-    return res.status(400).json({ error: 'Missing proxy path segments' })
+  // Path comes from rewrite query param
+  const rawPath = (req.query._path as string) || ''
+  if (!rawPath) {
+    return res.status(400).json({ error: 'Missing _path param. Use /api/proxy/{base64url-origin}/{path}' })
   }
 
-  const encodedOrigin = pathSegments[0]
-  const restPath = '/' + pathSegments.slice(1).join('/')
+  const segments = rawPath.split('/')
+  const encodedOrigin = segments[0]
+  const restPath = '/' + segments.slice(1).join('/')
 
   let targetOrigin: string
   try {
@@ -48,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const fullUrl = targetOrigin + restPath
 
   if (!isAllowedTarget(fullUrl)) {
-    return res.status(403).json({ error: 'Target URL not allowed' })
+    return res.status(403).json({ error: `Target URL not allowed: ${targetOrigin}` })
   }
 
   const headers: Record<string, string> = {}
