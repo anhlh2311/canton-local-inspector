@@ -10,6 +10,8 @@ import { nodesAtom, refreshIntervalAtom, selectedNodeIdAtom } from '@/stores/nod
 import { DEFAULT_NODES } from '@/constants/nodes'
 import type { NodeConfig, AuthConfig } from '@/types/canton'
 
+const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
+
 function SecretInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const [show, setShow] = useState(false)
   return (
@@ -385,9 +387,11 @@ export function SettingsPage() {
           <Button variant="outline" size="sm" onClick={handleReset}>
             <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
           </Button>
-          <Button variant="outline" size="sm" onClick={handleAddNode}>
-            <Plus className="h-3.5 w-3.5 mr-1" /> Local Node
-          </Button>
+          {!isVercel && (
+            <Button variant="outline" size="sm" onClick={handleAddNode}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> Local Node
+            </Button>
+          )}
           <Button size="sm" onClick={handleAddRemoteNode}>
             <Globe className="h-3.5 w-3.5 mr-1" /> Remote Node
           </Button>
