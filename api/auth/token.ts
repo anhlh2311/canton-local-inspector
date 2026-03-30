@@ -1,13 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getStoredCredentials } from './_redis'
+import { Redis } from '@upstash/redis'
 
 /**
  * OAuth2 token exchange serverless function.
- * Supports multiple nodes — client sends nodeId to select credentials.
  *
  * Credential lookup priority:
  *   1. CANTON_NODES_AUTH env var (pre-configured nodes)
- *   2. Vercel KV (dynamically-added nodes from Settings UI)
+ *   2. Upstash Redis (dynamically-added nodes from Settings UI)
  *   3. Legacy single-node CANTON_OAUTH2_* env vars
  */
 
@@ -20,7 +19,6 @@ interface NodeAuthConfig {
 }
 
 function getNodeAuthFromEnv(nodeId?: string): NodeAuthConfig | null {
-  // Try multi-node config first
   if (nodeId && process.env.CANTON_NODES_AUTH) {
     try {
       const configs = JSON.parse(process.env.CANTON_NODES_AUTH) as Record<string, NodeAuthConfig>
@@ -30,7 +28,6 @@ function getNodeAuthFromEnv(nodeId?: string): NodeAuthConfig | null {
     }
   }
 
-  // Legacy single-node env vars
   const tokenUrl = process.env.CANTON_OAUTH2_TOKEN_URL
   const clientId = process.env.CANTON_OAUTH2_CLIENT_ID
   const clientSecret = process.env.CANTON_OAUTH2_CLIENT_SECRET
@@ -45,6 +42,14 @@ function getNodeAuthFromEnv(nodeId?: string): NodeAuthConfig | null {
   }
 }
 
+async function getStoredCredentials(nodeId: string): Promise<NodeAuthConfig | null> {
+  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL
+  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN
+  if (!url || !token) return null
+  const redis = new Redis({ url, token })
+  return redis.get<NodeAuthConfig>(`canton:creds:${nodeId}`)
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -52,13 +57,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { audience, nodeId } = req.body ?? {}
 
-  // Priority 1: Environment variables (pre-configured nodes)
+  // Priority 1: Environment variables
   let auth: NodeAuthConfig | null = getNodeAuthFromEnv(nodeId)
 
-  // Priority 2: Vercel KV (dynamically-added nodes from Settings UI)
+  // Priority 2: Upstash Redis
   if (!auth && nodeId) {
-    const stored = await getStoredCredentials(nodeId)
-    if (stored) auth = stored
+    auth = await getStoredCredentials(nodeId)
   }
 
   if (!auth) {
