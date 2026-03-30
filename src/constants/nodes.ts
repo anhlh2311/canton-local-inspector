@@ -24,8 +24,14 @@ const defaultSharedSecretAuth: AuthConfig = {
  * ]'
  */
 function parseNodesFromEnv(): NodeConfig[] | null {
-  const raw = import.meta.env.VITE_NODES
+  let raw = import.meta.env.VITE_NODES as string | undefined
   if (!raw) return null
+
+  // Strip surrounding quotes that .env parsers may include
+  raw = raw.trim()
+  if ((raw.startsWith("'") && raw.endsWith("'")) || (raw.startsWith('"') && raw.endsWith('"'))) {
+    raw = raw.slice(1, -1)
+  }
 
   try {
     const nodes = JSON.parse(raw) as Record<string, unknown>[]

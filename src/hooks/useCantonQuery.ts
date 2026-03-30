@@ -21,7 +21,7 @@ export function useEnsureReadPermissions() {
     queryFn: async () => {
       if (grantedNodes.has(node.id)) return true
       const token = await getToken(node)
-      await api.grantReadAsAnyParty(node, token)
+      await api.grantReadAsAnyParty(node, token, node.adminUser)
       grantedNodes.add(node.id)
       return true
     },
