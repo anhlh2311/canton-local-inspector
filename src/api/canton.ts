@@ -31,20 +31,35 @@ function buildFullUrl(url: string, port: number): string {
   }
 }
 
+function isLocalhost(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
+  } catch {
+    return url.includes('localhost') || url.includes('127.0.0.1')
+  }
+}
+
 function getProxyBase(url: string, port: number, nodeId: string, type: 'json' | 'validator'): string {
   const fullUrl = buildFullUrl(url, port)
   const parsed = new URL(fullUrl)
-  const encoded = encodeOriginBase64url(parsed.origin)
   const pathPrefix = parsed.pathname === '/' ? '' : parsed.pathname
 
-  if (isVercel) {
-    // On Vercel: use serverless proxy /api/proxy/{base64url-origin}{pathPrefix}
-    return `/api/proxy/${encoded}${pathPrefix}`
+  // Localhost targets: connect directly from browser (no proxy needed, same machine)
+  if (isLocalhost(url)) {
+    if (!isVercel) {
+      // Local dev with Vite proxy for CORS
+      return `/proxy/${type}/${nodeId}`
+    }
+    // On Vercel: direct connection (user's browser → user's localhost)
+    return `${parsed.origin}${pathPrefix}`
   }
 
-  // Local dev: use Vite proxy
-  if (url === 'http://localhost') {
-    return `/proxy/${type}/${nodeId}`
+  // Remote targets: use proxy to avoid CORS
+  const encoded = encodeOriginBase64url(parsed.origin)
+
+  if (isVercel) {
+    return `/api/proxy/${encoded}${pathPrefix}`
   }
 
   return `/proxy/remote/${encoded}${pathPrefix}`
