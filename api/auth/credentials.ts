@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { Redis } from '@upstash/redis'
+import { getRedis, kvKey, type StoredCredentials } from './_redis'
 
 /**
  * Manage OAuth2 credentials for dynamically-added nodes.
@@ -8,34 +8,7 @@ import { Redis } from '@upstash/redis'
  * POST   /api/auth/credentials  — Save credentials for a node
  * DELETE /api/auth/credentials  — Remove credentials for a node
  * GET    /api/auth/credentials?nodeId=xxx — Check if credentials exist (no secrets returned)
- *
- * Requires env vars: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
- * (auto-set when linking Upstash Redis via Vercel Marketplace)
  */
-
-export interface StoredCredentials {
-  tokenUrl: string
-  clientId: string
-  clientSecret: string
-  audience: string
-  validatorAudience?: string
-}
-
-function getRedis(): Redis {
-  return new Redis({
-    url: (process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL)!,
-    token: (process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN)!,
-  })
-}
-
-function kvKey(nodeId: string): string {
-  return `canton:creds:${nodeId}`
-}
-
-export async function getStoredCredentials(nodeId: string): Promise<StoredCredentials | null> {
-  const redis = getRedis()
-  return redis.get<StoredCredentials>(kvKey(nodeId))
-}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {

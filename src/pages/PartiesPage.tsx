@@ -194,7 +194,7 @@ function UsersTab() {
       {users.error && <ErrorDisplay error={users.error as Error} />}
       <div className="space-y-2">
         {visible.map((entry) => (
-          <PartyCard key={entry.partyId || entry.userId} entry={entry} expanded={expandedParty === entry.partyId} onToggle={() => setExpandedParty(expandedParty === entry.partyId ? null : entry.partyId)} />
+          <PartyCard key={entry.userId || entry.partyId} entry={entry} expanded={expandedParty === (entry.userId || entry.partyId)} onToggle={() => setExpandedParty(expandedParty === (entry.userId || entry.partyId) ? null : (entry.userId || entry.partyId))} />
         ))}
         {filtered.length === 0 && !users.isLoading && (
           <EmptyState icon={Users} title="No users found" description={search ? 'Try a different search' : 'No users on this node'} />

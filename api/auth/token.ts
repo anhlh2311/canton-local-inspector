@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getStoredCredentials } from './credentials'
+import { getStoredCredentials } from './_redis'
 
 /**
  * OAuth2 token exchange serverless function.
