@@ -15,14 +15,37 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ClearableInput } from '@/components/common/ClearableInput'
 import { AutocompleteInput, type AutocompleteOption } from '@/components/common/AutocompleteInput'
 import { IdDisplay } from '@/components/common/IdDisplay'
+import { CopyButton } from '@/components/common/CopyButton'
 import { JsonViewer } from '@/components/common/JsonViewer'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { ErrorDisplay } from '@/components/common/ErrorDisplay'
 import { EmptyState } from '@/components/common/EmptyState'
+import { useAtomValue } from 'jotai'
+import { themeAtom } from '@/stores/nodeStore'
 import { useActiveContracts, useFlatUsers, useNodeConfig, useDiscoverTemplates } from '@/hooks/useCantonQuery'
 import { buildTemplateFilter, buildInterfaceFilter } from '@/api/canton'
 import { cn, truncateId } from '@/lib/utils'
 import type { ActiveContract } from '@/types/canton'
+
+// Badge style helpers — conditionally switch between light/dark since Tailwind v4
+// dark: variant may not track the .dark class toggle reliably.
+const badgeStyles = {
+  indigo: (dark: boolean) => dark
+    ? 'bg-transparent text-indigo-400 border-indigo-500/30'
+    : 'bg-indigo-100 text-indigo-700 border-indigo-300',
+  violet: (dark: boolean) => dark
+    ? 'bg-transparent text-violet-400 border-violet-500/30'
+    : 'bg-violet-100 text-violet-700 border-violet-300',
+  amber: (dark: boolean) => dark
+    ? 'bg-transparent text-amber-400 border-amber-500/30'
+    : 'bg-amber-100 text-amber-700 border-amber-300',
+  gray: (dark: boolean) => dark
+    ? 'bg-transparent text-gray-400 border-gray-500/30'
+    : 'bg-gray-200 text-gray-800 border-gray-300',
+  grayLight: (dark: boolean) => dark
+    ? 'bg-transparent text-gray-400 border-gray-500/30'
+    : 'bg-gray-100 text-gray-700 border-gray-300',
+}
 
 // Build party autocomplete options from loaded users (lightweight, already cached).
 // Users can also type any party ID manually for external parties.
@@ -63,6 +86,7 @@ function useTemplateOptions(partyId: string | undefined) {
 
 function ContractCard({ contract, defaultExpanded }: { contract: ActiveContract; defaultExpanded?: boolean }) {
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
+  const dark = useAtomValue(themeAtom) === 'dark'
   const evt = contract.contractEntry?.JsActiveContract?.createdEvent
   if (!evt) return null
 
@@ -80,11 +104,11 @@ function ContractCard({ contract, defaultExpanded }: { contract: ActiveContract;
           <IdDisplay id={evt.contractId} truncate={16} />
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Badge className="text-[10px] font-mono bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
+          <Badge variant="outline" className={cn("text-[10px] font-mono", badgeStyles.indigo(dark))}>
             {evt.templateId?.split(':').pop() ?? 'Unknown'}
           </Badge>
           {evt.packageName && (
-            <Badge className="text-[10px] bg-amber-500/20 text-amber-300 border-amber-500/30">
+            <Badge variant="outline" className={cn("text-[10px]", badgeStyles.amber(dark))}>
               {evt.packageName}
             </Badge>
           )}
@@ -93,22 +117,29 @@ function ContractCard({ contract, defaultExpanded }: { contract: ActiveContract;
       {expanded && (
         <div className="border-t border-border/50">
           <div className="p-3 space-y-2 bg-muted/10">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <div>
-                <p className="text-[10px] text-muted-foreground">Template ID</p>
-                <IdDisplay id={evt.templateId} truncate={20} />
+            <div className="flex flex-col gap-1">
+              <p className="text-[10px] text-muted-foreground">Template ID</p>
+              <div className="flex items-center gap-1">
+                <Badge variant="outline" className={cn("text-[10px] font-mono w-fit", badgeStyles.indigo(dark))}>{evt.templateId}</Badge>
+                <CopyButton text={evt.templateId} className="h-5 w-5 shrink-0" />
               </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">Contract ID</p>
-                <IdDisplay id={evt.contractId} truncate={20} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <p className="text-[10px] text-muted-foreground">Contract ID</p>
+              <div className="flex items-center gap-1">
+                <Badge variant="outline" className={cn("text-[10px] font-mono w-fit", badgeStyles.violet(dark))}>{evt.contractId}</Badge>
+                <CopyButton text={evt.contractId} className="h-5 w-5 shrink-0" />
               </div>
             </div>
             {evt.signatories?.length > 0 && (
               <div>
                 <p className="text-[10px] text-muted-foreground mb-1">Signatories</p>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-col gap-1">
                   {evt.signatories.map((s, i) => (
-                    <Badge key={i} variant="secondary" className="text-[10px] font-mono">{s.slice(0, 20)}...</Badge>
+                    <div key={i} className="flex items-center gap-1">
+                      <Badge variant="outline" className={cn("text-[10px] font-mono w-fit", badgeStyles.gray(dark))}>{s}</Badge>
+                      <CopyButton text={s} className="h-5 w-5 shrink-0" />
+                    </div>
                   ))}
                 </div>
               </div>
@@ -116,9 +147,12 @@ function ContractCard({ contract, defaultExpanded }: { contract: ActiveContract;
             {evt.observers?.length > 0 && (
               <div>
                 <p className="text-[10px] text-muted-foreground mb-1">Observers</p>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-col gap-1">
                   {evt.observers.map((o, i) => (
-                    <Badge key={i} variant="outline" className="text-[10px] font-mono">{o.slice(0, 20)}...</Badge>
+                    <div key={i} className="flex items-center gap-1">
+                      <Badge variant="outline" className={cn("text-[10px] font-mono w-fit", badgeStyles.grayLight(dark))}>{o}</Badge>
+                      <CopyButton text={o} className="h-5 w-5 shrink-0" />
+                    </div>
                   ))}
                 </div>
               </div>

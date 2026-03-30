@@ -1,5 +1,7 @@
 import { JsonView, darkStyles, defaultStyles } from 'react-json-view-lite'
 import 'react-json-view-lite/dist/index.css'
+import { useAtomValue } from 'jotai'
+import { themeAtom } from '@/stores/nodeStore'
 import { cn } from '@/lib/utils'
 
 interface JsonViewerProps {
@@ -8,8 +10,8 @@ interface JsonViewerProps {
 }
 
 export function JsonViewer({ data, className }: JsonViewerProps) {
-  const isDark = document.documentElement.classList.contains('dark')
-  const baseStyles = isDark ? darkStyles : defaultStyles
+  const theme = useAtomValue(themeAtom)
+  const baseStyles = theme === 'dark' ? darkStyles : defaultStyles
   const styles = {
     ...baseStyles,
     container: 'bg-transparent font-mono text-sm',
