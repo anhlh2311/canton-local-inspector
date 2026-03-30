@@ -84,7 +84,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   } catch { /* continue */ }
 
-  if (!isAllowedTarget(targetOrigin + restPath)) {
+  // Allow pre-configured targets from env, plus any HTTPS target
+  // (dynamic nodes added via Settings UI use HTTPS endpoints)
+  if (!isAllowedTarget(targetOrigin + restPath) && !targetOrigin.startsWith('https://')) {
     return res.status(403).json({ error: `Target URL not allowed: ${targetOrigin}` })
   }
 

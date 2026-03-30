@@ -463,8 +463,17 @@ async function fetchOAuth2Token(node: NodeConfig, audience: string): Promise<str
   if (node.auth.mode !== 'oauth2') throw new Error('Not OAuth2')
 
   if (isVercel) {
-    // On Vercel: use serverless function — secrets stay server-side
-    const res = await axios.post('/api/auth/token', { audience, nodeId: node.id })
+    // On Vercel: use serverless function for token exchange.
+    // For pre-configured nodes, server uses CANTON_NODES_AUTH env var.
+    // For dynamically-added nodes (Settings UI), send credentials so server can proxy.
+    const { tokenUrl, clientId, clientSecret } = node.auth
+    const payload: Record<string, string> = { audience, nodeId: node.id }
+    if (tokenUrl && clientId && clientSecret) {
+      payload.tokenUrl = tokenUrl
+      payload.clientId = clientId
+      payload.clientSecret = clientSecret
+    }
+    const res = await axios.post('/api/auth/token', payload)
     return res.data.access_token
   }
 

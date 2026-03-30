@@ -52,15 +52,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { audience, nodeId } = req.body ?? {}
+  const { audience, nodeId, tokenUrl, clientId, clientSecret } = req.body ?? {}
 
-  const auth = getNodeAuth(nodeId)
+  // Priority 1: Server-side credentials from env vars (pre-configured nodes)
+  // Priority 2: Client-provided credentials (dynamically-added nodes from Settings UI)
+  const serverAuth = getNodeAuth(nodeId)
+  const auth: NodeAuthConfig | null = serverAuth ?? (
+    tokenUrl && clientId && clientSecret
+      ? { tokenUrl, clientId, clientSecret, audience: audience || '' }
+      : null
+  )
+
   if (!auth) {
     return res.status(500).json({
-      error: 'OAuth2 credentials not configured on server',
+      error: 'OAuth2 credentials not configured',
       details: nodeId
-        ? `No credentials found for node "${nodeId}". Configure CANTON_NODES_AUTH or CANTON_OAUTH2_* env vars.`
-        : 'Configure CANTON_OAUTH2_* or CANTON_NODES_AUTH env vars.',
+        ? `No credentials found for node "${nodeId}". Configure CANTON_NODES_AUTH env var, or provide credentials via the Settings UI.`
+        : 'Provide OAuth2 credentials via Settings UI or configure CANTON_OAUTH2_* env vars.',
     })
   }
 
