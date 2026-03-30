@@ -464,7 +464,7 @@ async function fetchOAuth2Token(node: NodeConfig, audience: string): Promise<str
 
   if (isVercel) {
     // On Vercel: use serverless function — secrets stay server-side
-    const res = await axios.post('/api/auth/token', { audience })
+    const res = await axios.post('/api/auth/token', { audience, nodeId: node.id })
     return res.data.access_token
   }
 

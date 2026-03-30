@@ -8,10 +8,23 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
  * → forwards to http://146.59.110.100:7575/api/json-api/v2/version
  */
 
-const ALLOWED_TARGETS = [
-  process.env.CANTON_JSON_API_URL,
-  process.env.CANTON_VALIDATOR_API_URL,
-].filter(Boolean) as string[]
+// Build allowed targets from env vars
+function getAllowedTargets(): string[] {
+  const targets: string[] = []
+
+  // Legacy single-node vars
+  if (process.env.CANTON_JSON_API_URL) targets.push(process.env.CANTON_JSON_API_URL)
+  if (process.env.CANTON_VALIDATOR_API_URL) targets.push(process.env.CANTON_VALIDATOR_API_URL)
+
+  // Multi-node: CANTON_ALLOWED_TARGETS (comma-separated URLs)
+  if (process.env.CANTON_ALLOWED_TARGETS) {
+    targets.push(...process.env.CANTON_ALLOWED_TARGETS.split(',').map((t) => t.trim()).filter(Boolean))
+  }
+
+  return targets
+}
+
+const ALLOWED_TARGETS = getAllowedTargets()
 
 function isAllowedTarget(url: string): boolean {
   if (ALLOWED_TARGETS.length === 0) return true

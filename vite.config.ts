@@ -5,26 +5,59 @@ import path from 'path'
 import http from 'node:http'
 import https from 'node:https'
 
-// Canton node port mappings for local proxy
-const nodes = [
+// Default Canton quickstart port mappings for local proxy
+const defaultLocalNodes = [
   { id: 'trading-partner', jsonApi: 1975, validatorApi: 1903 },
   { id: 'app-user', jsonApi: 2975, validatorApi: 2903 },
   { id: 'app-provider', jsonApi: 3975, validatorApi: 3903 },
   { id: 'super-validator', jsonApi: 4975, validatorApi: 4903 },
 ]
 
-// Build proxy config for each local node (these work fine with static targets)
+// Also try to parse VITE_NODES from env to add proxy entries for env-configured local nodes
+function getEnvLocalNodes(): { id: string; jsonApi: number; validatorApi: number }[] {
+  try {
+    const raw = process.env.VITE_NODES
+    if (!raw) return []
+    const nodes = JSON.parse(raw) as Record<string, unknown>[]
+    return nodes
+      .filter((n) => {
+        const url = (n.jsonApiUrl as string) || ''
+        return url.includes('localhost') || url.includes('127.0.0.1')
+      })
+      .map((n) => ({
+        id: (n.id as string) || 'env-node',
+        jsonApi: Number(n.jsonApiPort) || 0,
+        validatorApi: Number(n.validatorApiPort) || 0,
+      }))
+      .filter((n) => n.jsonApi > 0)
+  } catch {
+    return []
+  }
+}
+
+const allLocalNodes = [...defaultLocalNodes, ...getEnvLocalNodes()]
+// Deduplicate by id
+const seenIds = new Set<string>()
+const localNodes = allLocalNodes.filter((n) => {
+  if (seenIds.has(n.id)) return false
+  seenIds.add(n.id)
+  return true
+})
+
+// Build proxy config for each local node
 const proxy: Record<string, object> = {}
-for (const node of nodes) {
+for (const node of localNodes) {
   proxy[`/proxy/json/${node.id}`] = {
     target: `http://localhost:${node.jsonApi}`,
     changeOrigin: true,
     rewrite: (p: string) => p.replace(`/proxy/json/${node.id}`, ''),
   }
-  proxy[`/proxy/validator/${node.id}`] = {
-    target: `http://localhost:${node.validatorApi}`,
-    changeOrigin: true,
-    rewrite: (p: string) => p.replace(`/proxy/validator/${node.id}`, ''),
+  if (node.validatorApi) {
+    proxy[`/proxy/validator/${node.id}`] = {
+      target: `http://localhost:${node.validatorApi}`,
+      changeOrigin: true,
+      rewrite: (p: string) => p.replace(`/proxy/validator/${node.id}`, ''),
+    }
   }
 }
 
