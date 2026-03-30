@@ -1,16 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { getStoredCredentials } from './credentials'
 
 /**
  * OAuth2 token exchange serverless function.
  * Supports multiple nodes — client sends nodeId to select credentials.
  *
- * Server-side env vars:
- *   CANTON_NODES_AUTH — JSON object mapping nodeId to OAuth2 credentials:
- *     '{"devnet":{"tokenUrl":"...","clientId":"...","clientSecret":"...","audience":"...","validatorAudience":"..."}}'
- *
- *   Legacy single-node vars (used when nodeId is not found in CANTON_NODES_AUTH):
- *     CANTON_OAUTH2_TOKEN_URL, CANTON_OAUTH2_CLIENT_ID, CANTON_OAUTH2_CLIENT_SECRET,
- *     CANTON_OAUTH2_AUDIENCE, CANTON_OAUTH2_VALIDATOR_AUDIENCE
+ * Credential lookup priority:
+ *   1. CANTON_NODES_AUTH env var (pre-configured nodes)
+ *   2. Vercel KV (dynamically-added nodes from Settings UI)
+ *   3. Legacy single-node CANTON_OAUTH2_* env vars
  */
 
 interface NodeAuthConfig {
@@ -21,7 +19,7 @@ interface NodeAuthConfig {
   validatorAudience?: string
 }
 
-function getNodeAuth(nodeId?: string): NodeAuthConfig | null {
+function getNodeAuthFromEnv(nodeId?: string): NodeAuthConfig | null {
   // Try multi-node config first
   if (nodeId && process.env.CANTON_NODES_AUTH) {
     try {
@@ -52,23 +50,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { audience, nodeId, tokenUrl, clientId, clientSecret } = req.body ?? {}
+  const { audience, nodeId } = req.body ?? {}
 
-  // Priority 1: Server-side credentials from env vars (pre-configured nodes)
-  // Priority 2: Client-provided credentials (dynamically-added nodes from Settings UI)
-  const serverAuth = getNodeAuth(nodeId)
-  const auth: NodeAuthConfig | null = serverAuth ?? (
-    tokenUrl && clientId && clientSecret
-      ? { tokenUrl, clientId, clientSecret, audience: audience || '' }
-      : null
-  )
+  // Priority 1: Environment variables (pre-configured nodes)
+  let auth: NodeAuthConfig | null = getNodeAuthFromEnv(nodeId)
+
+  // Priority 2: Vercel KV (dynamically-added nodes from Settings UI)
+  if (!auth && nodeId) {
+    const stored = await getStoredCredentials(nodeId)
+    if (stored) auth = stored
+  }
 
   if (!auth) {
     return res.status(500).json({
       error: 'OAuth2 credentials not configured',
       details: nodeId
-        ? `No credentials found for node "${nodeId}". Configure CANTON_NODES_AUTH env var, or provide credentials via the Settings UI.`
-        : 'Provide OAuth2 credentials via Settings UI or configure CANTON_OAUTH2_* env vars.',
+        ? `No credentials found for node "${nodeId}". Save credentials via the Settings UI or configure CANTON_NODES_AUTH env var.`
+        : 'Configure CANTON_OAUTH2_* or CANTON_NODES_AUTH env vars.',
     })
   }
 

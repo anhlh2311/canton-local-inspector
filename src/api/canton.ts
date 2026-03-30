@@ -17,6 +17,19 @@ import type {
 
 const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
 
+/** Save OAuth2 credentials server-side in Vercel KV (never stored in browser). */
+export async function saveNodeCredentials(nodeId: string, creds: {
+  tokenUrl: string; clientId: string; clientSecret: string;
+  audience: string; validatorAudience?: string;
+}): Promise<void> {
+  await axios.post('/api/auth/credentials', { nodeId, ...creds })
+}
+
+/** Remove OAuth2 credentials from server-side storage. */
+export async function deleteNodeCredentials(nodeId: string): Promise<void> {
+  await axios.delete('/api/auth/credentials', { params: { nodeId } })
+}
+
 function encodeOriginBase64url(origin: string): string {
   return btoa(origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
@@ -463,17 +476,9 @@ async function fetchOAuth2Token(node: NodeConfig, audience: string): Promise<str
   if (node.auth.mode !== 'oauth2') throw new Error('Not OAuth2')
 
   if (isVercel) {
-    // On Vercel: use serverless function for token exchange.
-    // For pre-configured nodes, server uses CANTON_NODES_AUTH env var.
-    // For dynamically-added nodes (Settings UI), send credentials so server can proxy.
-    const { tokenUrl, clientId, clientSecret } = node.auth
-    const payload: Record<string, string> = { audience, nodeId: node.id }
-    if (tokenUrl && clientId && clientSecret) {
-      payload.tokenUrl = tokenUrl
-      payload.clientId = clientId
-      payload.clientSecret = clientSecret
-    }
-    const res = await axios.post('/api/auth/token', payload)
+    // On Vercel: server looks up credentials from env vars or Vercel KV.
+    // Client only sends nodeId + audience — no secrets in the request.
+    const res = await axios.post('/api/auth/token', { audience, nodeId: node.id })
     return res.data.access_token
   }
 

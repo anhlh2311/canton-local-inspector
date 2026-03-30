@@ -15,6 +15,8 @@ export interface OAuth2Auth {
   clientSecret: string
   audience: string
   validatorAudience?: string
+  /** True when credentials are stored server-side (Vercel KV), not in localStorage */
+  _hasServerCredentials?: boolean
 }
 
 export type AuthConfig = SharedSecretAuth | OAuth2Auth

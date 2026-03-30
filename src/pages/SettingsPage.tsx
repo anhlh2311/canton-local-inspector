@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
-import { Settings, Plus, Trash2, Save, RotateCcw, Eye, EyeOff, Globe, Key } from 'lucide-react'
+import { Settings, Plus, Trash2, Save, RotateCcw, Eye, EyeOff, Globe, Key, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { nodesAtom, refreshIntervalAtom, selectedNodeIdAtom } from '@/stores/nodeStore'
 import { DEFAULT_NODES } from '@/constants/nodes'
+import { saveNodeCredentials, deleteNodeCredentials } from '@/api/canton'
 import type { NodeConfig, AuthConfig } from '@/types/canton'
 
 const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
@@ -35,7 +36,11 @@ function SecretInput({ value, onChange, placeholder }: { value: string; onChange
   )
 }
 
-function AuthConfigForm({ auth, onChange }: { auth: AuthConfig; onChange: (a: AuthConfig) => void }) {
+function AuthConfigForm({ auth, onChange, secretOverride }: {
+  auth: AuthConfig;
+  onChange: (a: AuthConfig) => void;
+  secretOverride?: { value: string; onChange: (v: string) => void; placeholder?: string };
+}) {
   const isOAuth2 = auth.mode === 'oauth2'
 
   const switchMode = (mode: 'shared-secret' | 'oauth2') => {
@@ -118,7 +123,15 @@ function AuthConfigForm({ auth, onChange }: { auth: AuthConfig; onChange: (a: Au
           </div>
           <div>
             <label className="text-[10px] text-muted-foreground">Client Secret</label>
-            <SecretInput value={auth.clientSecret} onChange={(v) => onChange({ ...auth, clientSecret: v })} />
+            {secretOverride ? (
+              <SecretInput
+                value={secretOverride.value}
+                onChange={secretOverride.onChange}
+                placeholder={secretOverride.placeholder}
+              />
+            ) : (
+              <SecretInput value={auth.clientSecret} onChange={(v) => onChange({ ...auth, clientSecret: v })} />
+            )}
           </div>
           <div>
             <label className="text-[10px] text-muted-foreground">Audience</label>
@@ -146,10 +159,45 @@ function NodeConfigCard({
   isSelected: boolean
 }) {
   const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [form, setForm] = useState(node)
+  // Track the client secret separately — it's only in memory, never in localStorage on Vercel
+  const [secretInput, setSecretInput] = useState('')
+  const [hasServerCreds, setHasServerCreds] = useState(node.auth.mode === 'oauth2' && !!node.auth._hasServerCredentials)
 
-  const handleSave = () => {
-    onUpdate(form)
+  const handleSave = async () => {
+    setSaveError(null)
+    // On Vercel + OAuth2: save credentials to server, strip secret from local storage
+    if (isVercel && form.auth.mode === 'oauth2' && secretInput) {
+      try {
+        setSaving(true)
+        await saveNodeCredentials(form.id, {
+          tokenUrl: form.auth.tokenUrl,
+          clientId: form.auth.clientId,
+          clientSecret: secretInput,
+          audience: form.auth.audience,
+          validatorAudience: form.auth.validatorAudience,
+        })
+        setHasServerCreds(true)
+        // Save node config WITHOUT the secret — only a flag indicating server has it
+        const sanitizedForm: NodeConfig = {
+          ...form,
+          auth: { ...form.auth, clientSecret: '', _hasServerCredentials: true },
+        }
+        onUpdate(sanitizedForm)
+        setSecretInput('')
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to save credentials'
+        setSaveError(msg)
+        return
+      } finally {
+        setSaving(false)
+      }
+    } else {
+      // Local dev or shared-secret: store as-is (credentials only in local config)
+      onUpdate(form)
+    }
     setEditing(false)
   }
 
@@ -237,10 +285,22 @@ function NodeConfigCard({
             </div>
 
             <Separator />
-            <AuthConfigForm auth={form.auth} onChange={(auth) => setForm({ ...form, auth })} />
+            <AuthConfigForm
+              auth={form.auth}
+              onChange={(auth) => setForm({ ...form, auth })}
+              secretOverride={isVercel && form.auth.mode === 'oauth2' ? {
+                value: secretInput,
+                onChange: setSecretInput,
+                placeholder: hasServerCreds ? '••••••••  (stored on server)' : 'Enter client secret',
+              } : undefined}
+            />
 
-            <Button size="sm" onClick={handleSave}>
-              <Save className="h-3.5 w-3.5 mr-1" /> Save
+            {saveError && (
+              <p className="text-xs text-destructive">{saveError}</p>
+            )}
+            <Button size="sm" onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+              {saving ? 'Saving...' : 'Save'}
             </Button>
           </div>
         ) : (
@@ -334,6 +394,11 @@ export function SettingsPage() {
   }
 
   const handleDeleteNode = (index: number) => {
+    const node = nodes[index]
+    // Clean up server-side credentials if stored
+    if (isVercel && node.auth.mode === 'oauth2') {
+      deleteNodeCredentials(node.id).catch(() => {})
+    }
     setNodes(nodes.filter((_, i) => i !== index))
   }
 
