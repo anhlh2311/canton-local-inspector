@@ -60,6 +60,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const queryString = queryParams.toString()
   const fullUrl = targetOrigin + restPath + (queryString ? `?${queryString}` : '')
 
+  // Check if targeting localhost — serverless functions can't reach the user's machine
+  try {
+    const targetHost = new URL(targetOrigin).hostname
+    if (targetHost === 'localhost' || targetHost === '127.0.0.1') {
+      return res.status(400).json({
+        error: 'Cannot connect to localhost from Vercel',
+        details: 'Localhost nodes are not reachable from cloud-hosted deployments. Use "yarn dev" for local development, or expose your Canton node via a tunnel (ngrok, cloudflared) and use the public URL instead.',
+      })
+    }
+  } catch { /* continue */ }
+
   if (!isAllowedTarget(targetOrigin + restPath)) {
     return res.status(403).json({ error: `Target URL not allowed: ${targetOrigin}` })
   }

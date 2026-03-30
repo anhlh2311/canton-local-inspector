@@ -45,14 +45,17 @@ function getProxyBase(url: string, port: number, nodeId: string, type: 'json' | 
   const parsed = new URL(fullUrl)
   const pathPrefix = parsed.pathname === '/' ? '' : parsed.pathname
 
-  // Localhost targets: connect directly from browser (no proxy needed, same machine)
+  // Localhost targets
   if (isLocalhost(url)) {
     if (!isVercel) {
-      // Local dev with Vite proxy for CORS
+      // Local dev: use Vite proxy for CORS
       return `/proxy/${type}/${nodeId}`
     }
-    // On Vercel: direct connection (user's browser → user's localhost)
-    return `${parsed.origin}${pathPrefix}`
+    // On Vercel: HTTPS→HTTP mixed content is blocked by browsers.
+    // Route through the Vercel proxy anyway — it will fail with a clear error
+    // rather than a cryptic ERR_BLOCKED_BY_CLIENT.
+    const encoded = encodeOriginBase64url(parsed.origin)
+    return `/api/proxy/${encoded}${pathPrefix}`
   }
 
   // Remote targets: use proxy to avoid CORS
