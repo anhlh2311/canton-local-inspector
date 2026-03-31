@@ -249,10 +249,85 @@ export async function discoverAllContracts(
   return allContracts
 }
 
-/** Discover template IDs using multiple strategies in parallel:
- *  1. Query each user's party with wildcard (users have fewer contracts than DSO)
- *  2. Collect all unique template IDs across successful queries
- *  Runs queries concurrently (batches of 5) for speed. */
+// Global registry: packageName → Set<Module:Entity> — learned from ANY successful query
+// on ANY node. Since Module:Entity names are stable across networks, this lets us construct
+// template IDs on nodes where wildcard queries fail.
+const knownTemplatePatterns: Record<string, Set<string>> = {}
+
+// Per-node: packageId → packageName mapping (discovered from contracts or scan proxy)
+const packageNameMap: Record<string, Record<string, string>> = {}
+
+function learnFromContracts(nodeId: string, contracts: ActiveContract[]) {
+  if (!packageNameMap[nodeId]) packageNameMap[nodeId] = {}
+  for (const c of contracts) {
+    const evt = c?.contractEntry?.JsActiveContract?.createdEvent
+    if (!evt?.templateId) continue
+    const tid = evt.templateId
+    const pkgName = evt.packageName ?? ''
+    const colonIdx = tid.indexOf(':')
+    if (colonIdx < 0) continue
+    const pkgId = tid.slice(0, colonIdx)
+    const moduleEntity = tid.slice(colonIdx + 1)
+    if (pkgName) {
+      packageNameMap[nodeId][pkgId] = pkgName
+      if (!knownTemplatePatterns[pkgName]) knownTemplatePatterns[pkgName] = new Set()
+      knownTemplatePatterns[pkgName].add(moduleEntity)
+    }
+  }
+}
+
+function learnFromScanProxy(nodeId: string, templateId: string) {
+  // Scan proxy template_ids don't include packageName, but we can learn the packageId
+  const colonIdx = templateId.indexOf(':')
+  if (colonIdx < 0) return
+  const pkgId = templateId.slice(0, colonIdx)
+  const moduleEntity = templateId.slice(colonIdx + 1)
+  // Infer package name from Splice module prefix
+  const spliceModuleMap: Record<string, string> = {
+    'Splice.Amulet': 'splice-amulet', 'Splice.AmuletRules': 'splice-amulet',
+    'Splice.AmuletTransferInstruction': 'splice-amulet', 'Splice.Round': 'splice-amulet',
+    'Splice.ValidatorLicense': 'splice-amulet', 'Splice.ValidatorOnboarding': 'splice-amulet',
+    'Splice.DsoRules': 'splice-amulet', 'Splice.DSO': 'splice-amulet',
+    'Splice.Ans': 'splice-amulet', 'Splice.DecentralizedSynchronizer': 'splice-amulet',
+    'Splice.ExternalPartyAmuletRules': 'splice-amulet',
+    'Splice.Wallet': 'splice-wallet',
+  }
+  const moduleName = moduleEntity.split(':')[0]
+  // Match against known module prefixes
+  for (const [prefix, pkgName] of Object.entries(spliceModuleMap)) {
+    if (moduleName === prefix || moduleName.startsWith(prefix + '.')) {
+      if (!packageNameMap[nodeId]) packageNameMap[nodeId] = {}
+      packageNameMap[nodeId][pkgId] = pkgName
+      if (!knownTemplatePatterns[pkgName]) knownTemplatePatterns[pkgName] = new Set()
+      knownTemplatePatterns[pkgName].add(moduleEntity)
+      return
+    }
+  }
+}
+
+/** Construct template IDs for a node by combining its package IDs with known Module:Entity patterns.
+ *  Returns full templateId strings (packageId:Module:Entity) for templates likely to exist. */
+function constructTemplateIds(nodeId: string): Set<string> {
+  const result = new Set<string>()
+  const nodePkgMap = packageNameMap[nodeId] ?? {}
+  // For each packageId on this node, find known templates via packageName
+  for (const [pkgId, pkgName] of Object.entries(nodePkgMap)) {
+    const patterns = knownTemplatePatterns[pkgName]
+    if (patterns) {
+      for (const moduleEntity of patterns) {
+        result.add(`${pkgId}:${moduleEntity}`)
+      }
+    }
+  }
+  return result
+}
+
+/** Discover template IDs using a multi-strategy approach:
+ *  1. Scan proxy (amulet-rules, mining-rounds) — no 200 limit, discovers core Splice templates
+ *  2. filtersForAnyParty wildcard — best single-shot JSON API coverage
+ *  3. Per-user-party wildcard — fallback for parties with <200 contracts
+ *  4. Cross-network construction — use Module:Entity patterns learned from ANY node
+ *     to construct template IDs using this node's package IDs */
 async function discoverTemplateIds(
   node: NodeConfig,
   token: string,
@@ -262,56 +337,91 @@ async function discoverTemplateIds(
   const client = createJsonApiClient(node, token)
   const templateIds = new Set<string>()
 
-  function extractTemplateIds(contracts: ActiveContract[]) {
+  function addTemplateIds(contracts: ActiveContract[]) {
+    learnFromContracts(node.id, contracts)
     for (const c of contracts) {
       const tid = c?.contractEntry?.JsActiveContract?.createdEvent?.templateId
       if (tid) templateIds.add(tid)
     }
   }
 
-  // Get all users to find parties with fewer contracts
-  let parties: string[]
+  // Strategy 1: Scan proxy — discovers core Splice template IDs with NO 200 limit
+  if (node.validatorApiUrl) {
+    try {
+      const valToken = await getValidatorAuthToken(node)
+      const valClient = createValidatorApiClient(node, valToken)
+      const [amuletRulesRes, roundsRes] = await Promise.allSettled([
+        valClient.get('/api/validator/v0/scan-proxy/amulet-rules'),
+        valClient.get('/api/validator/v0/scan-proxy/open-and-issuing-mining-rounds'),
+      ])
+      // Extract template_ids from scan proxy responses
+      if (amuletRulesRes.status === 'fulfilled') {
+        const tid = amuletRulesRes.value.data?.amulet_rules?.contract?.template_id
+        if (tid) { templateIds.add(tid); learnFromScanProxy(node.id, tid) }
+      }
+      if (roundsRes.status === 'fulfilled') {
+        const data = roundsRes.value.data
+        for (const key of Object.keys(data ?? {})) {
+          if (Array.isArray(data[key])) {
+            for (const r of data[key]) {
+              const tid = r?.contract?.template_id
+              if (tid) { templateIds.add(tid); learnFromScanProxy(node.id, tid) }
+            }
+          }
+        }
+      }
+    } catch { /* Scan proxy not available — continue */ }
+  }
+
+  const wildcardFilter = { identifierFilter: { WildcardFilter: { value: { includeCreatedEventBlob: false } } } }
+
+  // Strategy 2: filtersForAnyParty wildcard — single query, max coverage
   try {
-    const usersRes = await listAllUsers(node, token, { batchSize: 100, maxUsers: 50 })
-    const partySet = new Set<string>()
+    const res = await client.post('/v2/state/active-contracts', {
+      filter: { filtersForAnyParty: { cumulative: [wildcardFilter] } },
+      verbose: false,
+      activeAtOffset: offset,
+    })
+    addTemplateIds(res.data as ActiveContract[])
+    // Construct additional templates from cross-network knowledge
+    for (const tid of constructTemplateIds(node.id)) templateIds.add(tid)
+    return templateIds
+  } catch { /* Hit 200 limit */ }
+
+  // Strategy 3: Per-user-party wildcard (stop on first success)
+  try {
+    const usersRes = await listAllUsers(node, token, { batchSize: 100, maxUsers: 20 })
+    const parties: string[] = []
+    const seen = new Set<string>()
     for (const entry of usersRes.users ?? []) {
       const u = (entry as Record<string, unknown>)?.user as Record<string, unknown> | undefined
       const party = ((u?.primaryParty ?? (entry as Record<string, unknown>)?.primaryParty) as string) ?? ''
-      if (party) partySet.add(party)
+      if (party && !seen.has(party)) { seen.add(party); parties.push(party) }
     }
-    parties = [...partySet]
-  } catch {
-    return templateIds
-  }
-
-  // Query parties in parallel batches of 5 for speed
-  const BATCH_SIZE = 5
-  for (let i = 0; i < parties.length; i += BATCH_SIZE) {
-    const batch = parties.slice(i, i + BATCH_SIZE)
-    const results = await Promise.allSettled(
-      batch.map((party) =>
-        client.post('/v2/state/active-contracts', {
-          filter: {
-            filtersByParty: {
-              [party]: {
-                cumulative: [{
-                  identifierFilter: { WildcardFilter: { value: { includeCreatedEventBlob: false } } }
-                }]
-              }
-            }
-          },
-          verbose: false,
-          activeAtOffset: offset,
-        })
+    for (let i = 0; i < parties.length; i += 5) {
+      const batch = parties.slice(i, i + 5)
+      const results = await Promise.allSettled(
+        batch.map((party) =>
+          client.post('/v2/state/active-contracts', {
+            filter: { filtersByParty: { [party]: { cumulative: [wildcardFilter] } } },
+            verbose: false,
+            activeAtOffset: offset,
+          })
+        )
       )
-    )
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        extractTemplateIds(result.value.data as ActiveContract[])
+      let found = false
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          addTemplateIds(result.value.data as ActiveContract[])
+          found = true
+        }
       }
-      // Skip failed queries (party has >200 contracts)
+      if (found) break
     }
-  }
+  } catch { /* continue */ }
+
+  // Strategy 4: Cross-network construction — use learned patterns from other nodes
+  for (const tid of constructTemplateIds(node.id)) templateIds.add(tid)
 
   return templateIds
 }

@@ -32,6 +32,7 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
   const [templateSearch, setTemplateSearch] = useState('')
 
   // Merge templates with same short name (different package versions)
+  // Use the count from the version with the MOST contracts (latest/active version)
   const mergedTemplates: MergedTemplate[] = (() => {
     const raw = discovery.data ?? []
     const byName: Record<string, MergedTemplate> = {}
@@ -41,16 +42,24 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
       if (!byName[shortName]) {
         byName[shortName] = { shortName, packageName: pkgName, totalCount: 0, templateIds: [] }
       }
-      byName[shortName].totalCount += t.count
-      byName[shortName].templateIds.push(t.templateId)
+      // Use max count across versions (not sum) since the query only hits one version at a time
+      if (t.count > byName[shortName].totalCount) {
+        byName[shortName].totalCount = t.count
+        // Put the version with most contracts first (most likely the active version)
+        byName[shortName].templateIds.unshift(t.templateId)
+      } else {
+        byName[shortName].templateIds.push(t.templateId)
+      }
     }
     return Object.values(byName).sort((a, b) => b.totalCount - a.totalCount)
   })()
 
-  // When a merged template is selected, pick the first templateId to query
+  // When a merged template is selected, query ALL package versions and merge results
   const selected = mergedTemplates.find((t) => t.shortName === selectedName)
-  const selectedFilter = selected ? buildTemplateFilter(partyId, selected.templateIds[0]) : null
-  const selectedContracts = useActiveContracts(selectedFilter, `dso-${selectedName}`)
+  const selectedContracts = useActiveContracts(
+    selected ? buildTemplateFilter(partyId, selected.templateIds[0]) : null,
+    `dso-${selectedName}`
+  )
 
   const filteredTemplates = mergedTemplates.filter(
     (t) => t.shortName.toLowerCase().includes(templateSearch.toLowerCase()) ||
@@ -94,7 +103,7 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
                         <p className="text-sm font-medium truncate">{t.shortName}</p>
                         <p className="text-[10px] text-muted-foreground font-mono truncate">{t.packageName}</p>
                       </div>
-                      <Badge variant="secondary" className="shrink-0 ml-2">{t.totalCount}</Badge>
+                      <Badge variant="secondary" className="shrink-0 ml-2">~{t.totalCount}</Badge>
                     </div>
                   </CardContent>
                 </Card>

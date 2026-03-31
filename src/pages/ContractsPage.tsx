@@ -76,7 +76,7 @@ function useTemplateOptions(partyId: string | undefined) {
     () =>
       (discovery.data ?? []).map((t) => ({
         value: t.templateId,
-        label: `${t.templateId.split(':').pop()} (${t.count})`,
+        label: `${t.templateId.split(':').pop()} (~${t.count})`,
         sublabel: t.packageName || t.templateId.split(':')[0],
       })),
     [discovery.data]
