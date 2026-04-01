@@ -9,7 +9,8 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 - **Parties Explorer** — Three tabs: **Users** (local users from `/v2/users`, fast default), **Network Parties** (all parties from `/v2/parties`, paginated 200/page, opt-in for large networks), and **Party Lookup** (check specific party existence by ID). Local/Remote badges, rights, annotations.
 - **Package Manager** — List installed packages with auto-discovered names, templates, and active contract counts per package
 - **Contract Explorer** — Query active contracts by template, interface, or contract ID with autocomplete dropdowns for party and template selection. Auto-queries on selection with refresh button.
-- **Settings** — Configure local and remote node connections with per-node auth (shared-secret or OAuth2), auto-refresh intervals, custom colors
+- **Settings** — Configure local and remote node connections with per-node auth (shared-secret or OAuth2), auto-refresh intervals, custom colors. Template index status with manual refresh.
+- **Dark/Light Theme** — Toggle between dark and light modes with instant switching
 
 ### Key UX Details
 
@@ -17,12 +18,12 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 - **Local + Remote nodes** — Connect to localhost Canton nodes or remote validators (devnet/mainnet)
 - **Dual auth modes** — Shared-secret (HMAC-SHA256 JWT) for local dev, OAuth2 client credentials for remote/production
 - **Separate validator audience** — OAuth2 nodes can use a different audience for the Validator API vs the JSON API
-- **Auto-discovery** — Templates and package names are discovered from the ledger, not hardcoded. Handles nodes with >200 contracts via paginated per-package fallback.
+- **Auto-discovery** — Templates and package names are discovered from the ledger, not hardcoded
+- **Cron-based template indexing** — Background job pre-builds template index in Upstash Redis, solving the 200-contract discovery limit on mainnet
 - **Autocomplete inputs** — Keyboard-navigable dropdowns (Arrow keys + Enter) for party and template selection
 - **Copy-friendly** — Every ID (party, contract, package, template) has a one-click copy button
-- **Clearable inputs** — X button on all search and form fields
 - **Auto-refresh** — Configurable polling interval (5s / 15s / 30s / 60s / off)
-- **Dark theme** with indigo accent, color-coded badges (indigo for templates, amber for packages, green for refresh)
+- **Secure credential storage** — OAuth2 client secrets for dynamically-added nodes are stored server-side in Upstash Redis, never in the browser
 
 ## Tech Stack
 
@@ -32,6 +33,9 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 - Jotai for client state (with localStorage persistence)
 - Axios for HTTP
 - jose for JWT signing (HS256 shared-secret auth)
+- Upstash Redis for server-side credential and template index storage
+- Vercel Serverless Functions for secure OAuth2 token exchange and API proxy
+- Vercel Cron for scheduled template indexing
 
 ## Prerequisites
 
@@ -63,7 +67,7 @@ The dev server starts at `http://localhost:5173` and proxies API requests to Can
 | App Provider     | :3975    | :3903         | :3901       | Shared Secret  | Amber  |
 | Super Validator  | :4975    | :4903         | :4901       | Shared Secret  | Purple |
 
-Nodes can be added, edited, or removed in the Settings page.
+Nodes can be added, edited, or removed in the Settings page. Additional nodes can be configured via the `VITE_NODES` environment variable.
 
 ## Adding a Remote Node
 
@@ -83,9 +87,7 @@ Audience:           https://your-api-audience
 Validator Audience: https://your-validator-audience  (optional, for separate validator auth)
 ```
 
-The JSON API URL supports path prefixes (e.g., `/api/json-api`) for servers that don't serve the Canton API at the root.
-
-Remote nodes are automatically proxied through Vite's dev server to avoid CORS. No manual proxy configuration needed.
+On Vercel deployments, OAuth2 client secrets are stored securely in Upstash Redis — never in the browser's localStorage.
 
 ## Authentication
 
@@ -102,24 +104,43 @@ JWTs are signed with HMAC-SHA256 via the `jose` library and cached per node for 
 
 ### OAuth2 (Remote / Production)
 
-For remote validators using OAuth2 (Auth0, etc.):
+For remote validators using OAuth2 (Auth0, Keycloak, etc.):
 
 - Client credentials grant (`grant_type=client_credentials`)
-- Token endpoint is proxied through Vite to avoid CORS
+- On Vercel: tokens are exchanged server-side via `/api/auth/token` — secrets never reach the browser
+- On local dev: token endpoint is proxied through Vite to avoid CORS
 - Tokens are cached per node until expiry, keyed by `{nodeId}:{json|validator}`
 - Supports separate `validatorAudience` for the Validator/Scan Proxy API
 
 The app automatically grants `CanReadAsAnyParty` rights to the authenticated user on each node for contract visibility (shared-secret mode only).
 
-## Contract Discovery & Pagination
+## Template Discovery & Indexing
 
-Canton's JSON API limits active contract responses to 200 elements per request. The inspector handles this automatically:
+Canton's JSON API limits active contract responses to 200 elements per request. The inspector uses a multi-strategy approach to discover all templates:
 
-1. **Phase 1**: Wildcard query — if total contracts for the party < 200, returns everything in one shot
-2. **Phase 2**: If the wildcard hits the 200 limit (common for DSO parties on devnet/mainnet), discovers template IDs by querying individual user parties (which typically have far fewer contracts). User parties act as a "template directory".
-3. **Phase 3**: Queries each discovered template individually against the original target party — per-template counts are usually well under 200.
+### Cron-Based Indexing (Vercel)
 
-If all parties exceed the limit, the UI falls back to manual template entry in the Contract Explorer.
+A daily cron job pre-builds a template index for each configured node and caches it in Upstash Redis:
+
+1. **Scan Proxy** — Queries `amulet-rules` and `open-and-issuing-mining-rounds` endpoints (no 200 limit) to discover core Splice templates
+2. **`filtersForAnyParty` Wildcard** — Single JSON API query covering all visible parties
+3. **Per-User-Party Wildcards** — Fallback for nodes where the wildcard exceeds 200 total contracts
+
+The index can also be refreshed manually via the "Refresh Index Now" button in Settings.
+
+### Live Discovery Fallback
+
+When the cron index is unavailable (local dev, or first deploy before the cron runs):
+
+1. **Cached Index** — Checks Redis for pre-built template index (Vercel only)
+2. **Scan Proxy** — Core Splice templates via the Validator API
+3. **`filtersForAnyParty` Wildcard** — Single-shot coverage
+4. **Per-User-Party Wildcards** — Probes individual parties, stops on first success
+5. **Cross-Network Construction** — Uses `packageName` and `Module:Entity` patterns learned from any node to construct template IDs on other nodes
+
+### Contract Querying
+
+Once templates are discovered, the Contract Explorer queries each template individually per party — per-template counts are typically well under 200.
 
 ## Canton API Endpoints Used
 
@@ -143,6 +164,8 @@ If all parties exceed the limit, the UI falls back to manual template entry in t
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/validator/v0/scan-proxy/dso-party-id` | GET | Get DSO party ID |
+| `/api/validator/v0/scan-proxy/amulet-rules` | GET | AmuletRules contract and template ID |
+| `/api/validator/v0/scan-proxy/open-and-issuing-mining-rounds` | GET | Mining round contracts and template IDs |
 
 ## Vite Proxy Architecture
 
@@ -161,14 +184,14 @@ The remote and OAuth2 proxies use a custom Vite plugin (`dynamicProxyPlugin`) th
 
 ```
 src/
-├── api/canton.ts              # API functions, JWT/OAuth2 auth, proxy routing, contract pagination
+├── api/canton.ts              # API functions, JWT/OAuth2 auth, proxy routing, template discovery
 ├── types/canton.ts            # TypeScript types (NodeConfig, AuthConfig, API responses)
-├── constants/nodes.ts         # Default node configurations
-├── stores/nodeStore.ts        # Jotai atoms (selected node, health, refresh interval)
+├── constants/nodes.ts         # Default node configurations from env vars
+├── stores/nodeStore.ts        # Jotai atoms (selected node, health, refresh interval, theme)
 ├── hooks/useCantonQuery.ts    # React Query hooks for all API calls
 ├── components/
 │   ├── ui/                    # shadcn/ui primitives (button, card, tabs, etc.)
-│   ├── common/                # AutocompleteInput, SearchInput, ClearableInput, IdDisplay, JsonViewer, etc.
+│   ├── common/                # AutocompleteInput, SearchInput, ClearableInput, IdDisplay, JsonViewer, CopyButton
 │   └── layout/                # Sidebar, Header, NodeSelector, MainLayout
 ├── pages/
 │   ├── OverviewPage.tsx       # Network overview with stats and health
@@ -176,14 +199,23 @@ src/
 │   ├── PartiesPage.tsx        # User/party browser with search and pagination
 │   ├── PackagesPage.tsx       # Package list with template discovery
 │   ├── ContractsPage.tsx      # Contract query explorer (3 tabs, autocomplete)
-│   └── SettingsPage.tsx       # Node config with auth forms (shared-secret / OAuth2)
+│   └── SettingsPage.tsx       # Node config, auth forms, template index status
 ├── App.tsx                    # Route definitions
 └── main.tsx                   # Entry point with providers
+
+api/                           # Vercel Serverless Functions (each fully self-contained)
+├── auth/
+│   ├── token.ts               # OAuth2 client credentials exchange
+│   └── credentials.ts         # CRUD for node OAuth2 credentials in Redis
+├── cron/
+│   └── index-templates.ts     # Scheduled template indexing job
+├── proxy.ts                   # Canton API proxy with target allowlist
+└── templates.ts               # Serve cached template index from Redis
 ```
 
 ## Vercel Deployment
 
-The app supports deployment to Vercel with secure server-side auth. OAuth2 client secrets never reach the browser.
+The app supports deployment to Vercel with secure server-side auth, API proxying, credential storage, and cron-based template indexing.
 
 ### Architecture
 
@@ -191,8 +223,9 @@ The app supports deployment to Vercel with secure server-side auth. OAuth2 clien
 |-----------|-----------|-------------------|
 | API Proxy | Vite dev proxy (`/proxy/remote/...`) | Serverless function (`/api/proxy/...`) |
 | OAuth2 Token | Client-side via Vite proxy | Serverless function (`/api/auth/token`) |
-| Client Secret | In browser (dev only) | Vercel env var (server-side only) |
-| Node Config | 4 local quickstart nodes | Pre-configured from `VITE_*` env vars |
+| Client Secrets | In browser (dev only) | Upstash Redis (server-side) |
+| Template Index | Live discovery on demand | Cron job + Redis cache |
+| Node Config | Quickstart local nodes | `VITE_NODES` env var |
 
 ### Environment Variables
 
@@ -201,23 +234,44 @@ Set these in Vercel project settings:
 **Public (bundled in client — safe to expose):**
 ```bash
 VITE_DEPLOY_ENV=vercel
-VITE_NODE_NAME=Devnet Validator
-VITE_NODE_COLOR=#ec4899
-VITE_JSON_API_URL=http://146.59.110.100:7575/api/json-api
-VITE_VALIDATOR_API_URL=http://146.59.110.100:5003
-VITE_AUTH_MODE=oauth2
+
+# Multi-node config (JSON array — must be single line for dotenv)
+VITE_NODES='[{"id":"devnet","name":"Devnet","jsonApiUrl":"http://1.2.3.4:7575/api/json-api","validatorApiUrl":"http://1.2.3.4:5003","color":"#ec4899","authMode":"oauth2","audience":"https://your-audience","validatorAudience":"https://your-val-audience"}]'
 ```
 
 **Secret (server-side only — never in client bundle):**
 ```bash
-CANTON_JSON_API_URL=http://146.59.110.100:7575/api/json-api
-CANTON_VALIDATOR_API_URL=http://146.59.110.100:5003
-CANTON_OAUTH2_TOKEN_URL=https://your-tenant.auth0.com/oauth/token
-CANTON_OAUTH2_CLIENT_ID=your-client-id
-CANTON_OAUTH2_CLIENT_SECRET=your-client-secret
-CANTON_OAUTH2_AUDIENCE=https://your-api-audience
-CANTON_OAUTH2_VALIDATOR_AUDIENCE=https://your-validator-audience
+# OAuth2 credentials per node (JSON map keyed by node ID)
+CANTON_NODES_AUTH='{"devnet":{"tokenUrl":"https://your-tenant.auth0.com/oauth/token","clientId":"your-id","clientSecret":"your-secret","audience":"https://your-audience","validatorAudience":"https://your-val-audience"}}'
+
+# Proxy allowed targets
+CANTON_ALLOWED_TARGETS=http://1.2.3.4:7575/api/json-api,http://1.2.3.4:5003
+
+# Upstash Redis (auto-set when linking via Vercel Marketplace)
+KV_REST_API_URL=<your-url>
+KV_REST_API_TOKEN=<your-token>
+
+# Cron job security (generate with: openssl rand -base64 24)
+CRON_SECRET=<your-random-secret>
 ```
+
+### Serverless Functions
+
+| Function | Purpose |
+|----------|---------|
+| `POST /api/auth/token` | OAuth2 client credentials exchange — looks up secrets from env vars or Redis |
+| `POST/GET/DELETE /api/auth/credentials` | Manage OAuth2 credentials for dynamic nodes in Redis |
+| `GET /api/proxy/{base64url-origin}/{path}` | Forward requests to Canton APIs — validates allowed targets, blocks localhost |
+| `GET /api/templates?nodeId=xxx` | Serve cached template index from Redis |
+| `GET /api/cron/index-templates` | Cron-triggered template indexing (secured by `CRON_SECRET`) |
+
+### Cron Jobs
+
+| Schedule | Path | Purpose |
+|----------|------|---------|
+| `0 3 * * *` (daily at 3 AM UTC) | `/api/cron/index-templates` | Index templates for all configured nodes |
+
+On Vercel's free tier, cron jobs run once per day. Upgrade to Pro for more frequent scheduling. You can also trigger indexing manually via the "Refresh Index Now" button in Settings.
 
 ### Deploy
 
@@ -232,16 +286,15 @@ vercel
 vercel --prod
 ```
 
-### Serverless Functions
+### Post-Deploy Setup
 
-| Function | Purpose |
-|----------|---------|
-| `/api/auth/token` | OAuth2 client credentials exchange — reads `CANTON_OAUTH2_*` secrets |
-| `/api/proxy/[...path]` | Forwards requests to Canton APIs — validates against allowed target URLs |
+1. **Upstash Redis** — Create via Vercel Marketplace (Storage tab). Auto-sets `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
+2. **CRON_SECRET** — Generate and add: `openssl rand -base64 24`
+3. **First Index** — Go to Settings and click "Refresh Index Now" to build the initial template index.
 
 ### Local Development
 
-Local dev is unaffected. `VITE_DEPLOY_ENV` defaults to `local` (or is unset), which uses the Vite proxy as before. To test Vercel functions locally:
+Local dev is unaffected. `VITE_DEPLOY_ENV` defaults to `local` (or is unset), which uses the Vite proxy. To test Vercel functions locally:
 
 ```bash
 vercel dev
