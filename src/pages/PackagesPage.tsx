@@ -8,6 +8,7 @@ import {
   FileCode,
   Layers,
 } from 'lucide-react'
+import { useAtomValue } from 'jotai'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,21 +18,34 @@ import { CopyButton } from '@/components/common/CopyButton'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { ErrorDisplay } from '@/components/common/ErrorDisplay'
 import { EmptyState } from '@/components/common/EmptyState'
-import { usePackages, useNodeConfig, useFlatUsers, usePackageDiscovery } from '@/hooks/useCantonQuery'
+import { usePackages, useNodeConfig, useTemplateIndex, useActiveContracts } from '@/hooks/useCantonQuery'
+import { buildTemplateFilter } from '@/api/canton'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
-import type { PackageInfo } from '@/api/canton'
+import { autoQueryContractsAtom } from '@/stores/nodeStore'
+import type { TemplateIndexEntry } from '@/api/canton'
+import type { ActiveContract } from '@/types/canton'
+
+interface PackageTemplateInfo {
+  packageId: string
+  packageName: string
+  templates: TemplateIndexEntry[]
+}
 
 function PackageCard({
   packageId,
   info,
   expanded,
   onToggle,
+  partyId,
 }: {
   packageId: string
-  info: PackageInfo | undefined
+  info: PackageTemplateInfo | undefined
   expanded: boolean
   onToggle: () => void
+  partyId: string | undefined
 }) {
+  const autoQuery = useAtomValue(autoQueryContractsAtom)
+
   return (
     <Card className={expanded ? 'border-primary/50' : ''}>
       <CardContent className="p-0">
@@ -64,20 +78,15 @@ function PackageCard({
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {info && (
-                <>
-                  <Badge variant="secondary" className="text-[10px]">
-                    <FileCode className="h-3 w-3 mr-1" />
-                    {info.templates.length} template(s)
-                  </Badge>
-                  <Badge variant="outline" className="text-[10px]">
-                    {info.templates.reduce((sum, t) => sum + t.activeCount, 0)} contract(s)
-                  </Badge>
-                </>
+              {info && info.templates.length > 0 && (
+                <Badge variant="secondary" className="text-[10px]">
+                  <FileCode className="h-3 w-3 mr-1" />
+                  {info.templates.length} template(s)
+                </Badge>
               )}
               {!info && (
                 <Badge variant="secondary" className="text-[10px] text-muted-foreground">
-                  No active contracts
+                  No indexed templates
                 </Badge>
               )}
               <CopyButton text={packageId} className="h-7 w-7" />
@@ -107,32 +116,19 @@ function PackageCard({
               {info && info.templates.length > 0 && (
                 <div>
                   <p className="text-[10px] text-muted-foreground mb-2">
-                    Templates & Interfaces ({info.templates.length})
+                    Templates ({info.templates.length})
                   </p>
                   <div className="space-y-1">
                     {info.templates
-                      .sort((a, b) => b.activeCount - a.activeCount)
+                      .sort((a, b) => a.entity.localeCompare(b.entity))
                       .map((t) => (
-                        <div
+                        <TemplateRow
                           key={t.templateId}
-                          className="flex items-center justify-between py-1.5 px-3 rounded-md bg-muted/50 group"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-xs font-medium">{t.entityName}</p>
-                              <p className="text-[10px] text-muted-foreground font-mono truncate">
-                                {t.moduleName}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Badge variant="outline" className="text-[10px]">
-                              {t.activeCount} active
-                            </Badge>
-                            <CopyButton text={t.templateId} className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </div>
-                        </div>
+                          template={t}
+                          partyId={partyId}
+                          autoQuery={autoQuery}
+                          expanded={expanded}
+                        />
                       ))}
                   </div>
                 </div>
@@ -140,8 +136,8 @@ function PackageCard({
 
               {!info && (
                 <p className="text-xs text-muted-foreground">
-                  No active contracts found for this package. The package is installed but may contain
-                  interfaces, library modules, or templates with no active instances.
+                  No templates indexed for this package. Run the template indexer in Settings, or the package may contain
+                  only interfaces, library modules, or templates with no active instances.
                 </p>
               )}
             </div>
@@ -152,48 +148,94 @@ function PackageCard({
   )
 }
 
+/** Individual template row — optionally queries active contract count when visible */
+function TemplateRow({
+  template,
+  partyId,
+  autoQuery,
+  expanded,
+}: {
+  template: TemplateIndexEntry
+  partyId: string | undefined
+  autoQuery: boolean
+  expanded: boolean
+}) {
+  const shouldQuery = autoQuery && expanded && !!partyId
+  const filter = shouldQuery ? buildTemplateFilter(partyId!, template.templateId) : null
+  const contracts = useActiveContracts(filter, `pkg-${template.templateId}`)
+  const count = contracts.data ? (contracts.data as ActiveContract[]).length : null
+
+  return (
+    <div className="flex items-center justify-between py-1.5 px-3 rounded-md bg-muted/50 group">
+      <div className="flex items-center gap-2 min-w-0">
+        <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <div className="min-w-0">
+          <p className="text-xs font-medium">{template.entity}</p>
+          <p className="text-[10px] text-muted-foreground font-mono truncate">
+            {template.module}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {count !== null && (
+          <Badge variant="outline" className="text-[10px]">
+            {count} active
+          </Badge>
+        )}
+        {contracts.isLoading && <LoadingSpinner size={12} />}
+        <CopyButton text={template.templateId} className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity" />
+      </div>
+    </div>
+  )
+}
+
 export function PackagesPage() {
   const node = useNodeConfig()
   const packages = usePackages()
-  const users = useFlatUsers()
+  const templateIndex = useTemplateIndex()
   const [search, setSearch] = useState('')
   const { copied, copy } = useCopyToClipboard()
   const [expandedPkg, setExpandedPkg] = useState<string | null>(null)
 
   // Reset UI state on node change
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setExpandedPkg(null)
     setSearch('')
   }, [node.id])
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  // Use first available party for discovery
-  const parties = (users.users ?? [])
-    .map((u: Record<string, unknown>) => (u?.user as Record<string, unknown>)?.primaryParty ?? u?.primaryParty)
-    .filter(Boolean) as string[]
-  const discoveryParty = parties[0]
-  const discovery = usePackageDiscovery(discoveryParty)
 
   const packageIds = useMemo(() => packages.data?.packageIds ?? [], [packages.data?.packageIds])
 
-  // Build lookup: packageId -> PackageInfo
+  // Build lookup: packageId -> PackageTemplateInfo from the cached template index
   const packageInfoMap = useMemo(() => {
-    const map: Record<string, PackageInfo> = {}
-    for (const info of discovery.data ?? []) {
-      map[info.packageId] = info
+    const map: Record<string, PackageTemplateInfo> = {}
+    const templates = templateIndex.data?.templates ?? []
+    for (const t of templates) {
+      if (!map[t.packageId]) {
+        map[t.packageId] = { packageId: t.packageId, packageName: t.packageName, templates: [] }
+      }
+      map[t.packageId].templates.push(t)
+      if (t.packageName && !map[t.packageId].packageName) {
+        map[t.packageId].packageName = t.packageName
+      }
     }
     return map
-  }, [discovery.data])
+  }, [templateIndex.data])
 
-  // Merge: all package IDs + discovered info, sorted (named first, then unnamed)
+  // Get a party for active contract queries (first user party)
+  // Only used if autoQueryContracts is enabled
+  const partyId = useMemo(() => {
+    // We'll use the node's adminUser or first discovered party — but we don't eagerly fetch users
+    // The party will be passed down only when autoQuery is on
+    return node.adminUser || undefined
+  }, [node.adminUser])
+
+  // Merge: all package IDs + indexed info, sorted (named first, then unnamed)
   const mergedPackages = useMemo(() => {
     const result = packageIds.map((id) => ({
       id,
       info: packageInfoMap[id],
       name: packageInfoMap[id]?.packageName ?? '',
     }))
-    // Sort: packages with names first (alphabetically), then unnamed
     result.sort((a, b) => {
       if (a.name && !b.name) return -1
       if (!a.name && b.name) return 1
@@ -211,8 +253,8 @@ export function PackagesPage() {
           p.name.toLowerCase().includes(search.toLowerCase()) ||
           (p.info?.templates ?? []).some(
             (t) =>
-              t.entityName.toLowerCase().includes(search.toLowerCase()) ||
-              t.moduleName.toLowerCase().includes(search.toLowerCase())
+              t.entity.toLowerCase().includes(search.toLowerCase()) ||
+              t.module.toLowerCase().includes(search.toLowerCase())
           )
       ),
     [mergedPackages, search]
@@ -223,8 +265,7 @@ export function PackagesPage() {
     await copy(lines.join('\n'))
   }
 
-  const discoveredCount = discovery.data?.length ?? 0
-  const withTemplatesCount = filteredPackages.filter((p) => p.info).length
+  const indexedCount = Object.keys(packageInfoMap).length
 
   return (
     <div className="space-y-6">
@@ -256,19 +297,24 @@ export function PackagesPage() {
         </div>
       </div>
 
-      {/* Discovery status */}
-      {discovery.isLoading && (
+      {/* Index status */}
+      {templateIndex.isLoading && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <LoadingSpinner size={14} />
-          <span>Discovering package names and templates from active contracts...</span>
+          <span>Loading template index...</span>
         </div>
       )}
-      {discovery.error && (
-        <ErrorDisplay error="Could not discover package metadata from active contracts. Make sure a party with active contracts exists." />
-      )}
-      {discoveredCount > 0 && (
+      {indexedCount > 0 && (
         <div className="text-xs text-muted-foreground">
-          Discovered {discoveredCount} package(s) with active contracts ({withTemplatesCount} of {filteredPackages.length} shown have templates)
+          {indexedCount} package(s) with indexed templates (of {packageIds.length} total)
+          {templateIndex.data?.updatedAt && (
+            <span> — indexed {new Date(templateIndex.data.updatedAt).toLocaleString()}</span>
+          )}
+        </div>
+      )}
+      {!templateIndex.isLoading && indexedCount === 0 && packageIds.length > 0 && (
+        <div className="text-xs text-muted-foreground">
+          No template index available. Go to Settings and click "Refresh Index Now" to discover templates.
         </div>
       )}
 
@@ -295,6 +341,7 @@ export function PackagesPage() {
             info={pkg.info}
             expanded={expandedPkg === pkg.id}
             onToggle={() => setExpandedPkg(expandedPkg === pkg.id ? null : pkg.id)}
+            partyId={partyId}
           />
         ))}
 

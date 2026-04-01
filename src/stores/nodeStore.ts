@@ -21,3 +21,6 @@ export const refreshIntervalAtom = atomWithStorage<number>('canton-inspector-ref
 
 export type Theme = 'dark' | 'light'
 export const themeAtom = atomWithStorage<Theme>('canton-inspector-theme', 'dark')
+
+/** When true, expanding a package on the Packages page auto-queries active contracts for counts. */
+export const autoQueryContractsAtom = atomWithStorage<boolean>('canton-inspector-auto-query-contracts', false)

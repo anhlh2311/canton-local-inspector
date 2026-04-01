@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
-import { nodesAtom, refreshIntervalAtom, selectedNodeIdAtom } from '@/stores/nodeStore'
+import { nodesAtom, refreshIntervalAtom, selectedNodeIdAtom, autoQueryContractsAtom } from '@/stores/nodeStore'
 import { DEFAULT_NODES } from '@/constants/nodes'
 import { saveNodeCredentials, deleteNodeCredentials, triggerIndexRefresh } from '@/api/canton'
 import { useCronMeta } from '@/hooks/useCantonQuery'
@@ -447,6 +447,7 @@ function TemplateIndexStatus({ nodes }: { nodes: NodeConfig[] }) {
 export function SettingsPage() {
   const [nodes, setNodes] = useAtom(nodesAtom)
   const [refreshInterval, setRefreshInterval] = useAtom(refreshIntervalAtom)
+  const [autoQueryContracts, setAutoQueryContracts] = useAtom(autoQueryContractsAtom)
   const selectedNodeId = useAtomValue(selectedNodeIdAtom)
 
   const handleAddNode = () => {
@@ -539,6 +540,21 @@ export function SettingsPage() {
                   {ms === 0 ? 'Off' : `${ms / 1000}s`}
                 </Button>
               ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Packages Page</label>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={autoQueryContracts ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setAutoQueryContracts(!autoQueryContracts)}
+              >
+                {autoQueryContracts ? 'Auto-query active contracts: On' : 'Auto-query active contracts: Off'}
+              </Button>
+              <span className="text-[10px] text-muted-foreground">
+                When on, expanding a package queries active contract counts per template
+              </span>
             </div>
           </div>
         </CardContent>
