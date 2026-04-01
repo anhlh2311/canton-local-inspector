@@ -170,6 +170,11 @@ function TemplateRow({
   const filter = shouldQuery ? buildTemplateFilter(partyId!, template.templateId, offset) : null
   const contracts = useActiveContracts(filter, `pkg-${template.templateId}`)
   const count = contracts.data ? (contracts.data as ActiveContract[]).length : null
+  // Detect 200-limit error (413 or specific error code)
+  const isLimitError = contracts.error && (
+    (contracts.error as { response?: { status?: number } }).response?.status === 413 ||
+    (contracts.error as { response?: { data?: { code?: string } } }).response?.data?.code === 'JSON_API_MAXIMUM_LIST_ELEMENTS_NUMBER_REACHED'
+  )
 
   return (
     <div className="flex items-center justify-between py-1.5 px-3 rounded-md bg-muted/50 group">
@@ -186,6 +191,11 @@ function TemplateRow({
         {count !== null && (
           <Badge variant="outline" className="text-[10px]">
             {count} active
+          </Badge>
+        )}
+        {isLimitError && (
+          <Badge variant="outline" className="text-[10px] text-muted-foreground">
+            200+ active
           </Badge>
         )}
         {contracts.isLoading && <LoadingSpinner size={12} />}
