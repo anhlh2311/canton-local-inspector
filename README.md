@@ -9,7 +9,7 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 - **Parties Explorer** — Three tabs: **Users** (local users from `/v2/users`, fast default), **Network Parties** (all parties from `/v2/parties`, paginated 200/page, opt-in for large networks), and **Party Lookup** (check specific party existence by ID). Local/Remote badges, rights, annotations.
 - **Package Manager** — List installed packages with auto-discovered names, templates, and active contract counts per package
 - **Contract Explorer** — Query active contracts by template, interface, or contract ID with autocomplete dropdowns for party and template selection. Auto-queries on selection with refresh button.
-- **Settings** — Configure local and remote node connections with per-node auth (shared-secret or OAuth2), auto-refresh intervals, custom colors. Template index status with manual refresh.
+- **Settings** — Configure local and remote node connections with per-node auth (shared-secret or OAuth2), network selector (local/devnet/testnet/mainnet), auto-refresh intervals, custom colors. Template index status with manual refresh and cooldown protection.
 - **Dark/Light Theme** — Toggle between dark and light modes with instant switching
 
 ### Key UX Details
@@ -19,7 +19,8 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 - **Dual auth modes** — Shared-secret (HMAC-SHA256 JWT) for local dev, OAuth2 client credentials for remote/production
 - **Separate validator audience** — OAuth2 nodes can use a different audience for the Validator API vs the JSON API
 - **Auto-discovery** — Templates and package names are discovered from the ledger, not hardcoded
-- **Cron-based template indexing** — Background job pre-builds template index in Upstash Redis, solving the 200-contract discovery limit on mainnet
+- **Cron-based template indexing** — Background job pre-builds template index in Upstash Redis per network (devnet/testnet/mainnet), solving the 200-contract discovery limit
+- **Network-aware nodes** — Each node has a network identifier ensuring template indexes don't overlap across devnet/testnet/mainnet
 - **Autocomplete inputs** — Keyboard-navigable dropdowns (Arrow keys + Enter) for party and template selection
 - **Copy-friendly** — Every ID (party, contract, package, template) has a one-click copy button
 - **Auto-refresh** — Configurable polling interval (5s / 15s / 30s / 60s / off)
@@ -73,8 +74,9 @@ Nodes can be added, edited, or removed in the Settings page. Additional nodes ca
 
 Click **"Remote Node"** in Settings to add a remote validator. Example configuration:
 
-```
+```text
 Name:               Devnet Validator
+Network:            Devnet  (local / devnet / testnet / mainnet)
 JSON API URL:       http://146.59.110.100:7575/api/json-api
 JSON API Port:      0  (port already in URL)
 Validator URL:      http://146.59.110.100
@@ -86,6 +88,8 @@ Client Secret:      <your-client-secret>
 Audience:           https://your-api-audience
 Validator Audience: https://your-validator-audience  (optional, for separate validator auth)
 ```
+
+The **Network** field ensures template indexes are namespaced per network — devnet templates won't mix with mainnet templates during cross-node discovery.
 
 On Vercel deployments, OAuth2 client secrets are stored securely in Upstash Redis — never in the browser's localStorage.
 
@@ -126,7 +130,13 @@ A daily cron job pre-builds a template index for each configured node and caches
 2. **`filtersForAnyParty` Wildcard** — Single JSON API query covering all visible parties
 3. **Per-User-Party Wildcards** — Fallback for nodes where the wildcard exceeds 200 total contracts
 
-The index can also be refreshed manually via the "Refresh Index Now" button in Settings.
+The index is namespaced by node ID and tagged with the node's **network** (devnet/testnet/mainnet) to prevent cross-network template mixing.
+
+**Manual refresh**: Click "Refresh Index Now" in Settings. A **5-minute cooldown** prevents abuse — the server returns HTTP 429 if triggered too frequently, protecting Upstash Redis quota.
+
+**Security**:
+- Vercel cron (GET): authenticated via `CRON_SECRET` Bearer token
+- Manual trigger (POST): authenticated via same-origin check (browser `Origin` header must match `Host`)
 
 ### Live Discovery Fallback
 
@@ -136,7 +146,7 @@ When the cron index is unavailable (local dev, or first deploy before the cron r
 2. **Scan Proxy** — Core Splice templates via the Validator API
 3. **`filtersForAnyParty` Wildcard** — Single-shot coverage
 4. **Per-User-Party Wildcards** — Probes individual parties, stops on first success
-5. **Cross-Network Construction** — Uses `packageName` and `Module:Entity` patterns learned from any node to construct template IDs on other nodes
+5. **Same-Network Construction** — Uses `packageName` and `Module:Entity` patterns learned from other nodes **on the same network** to construct template IDs (devnet patterns stay in devnet, mainnet in mainnet)
 
 ### Contract Querying
 
@@ -236,7 +246,8 @@ Set these in Vercel project settings:
 VITE_DEPLOY_ENV=vercel
 
 # Multi-node config (JSON array — must be single line for dotenv)
-VITE_NODES='[{"id":"devnet","name":"Devnet","jsonApiUrl":"http://1.2.3.4:7575/api/json-api","validatorApiUrl":"http://1.2.3.4:5003","color":"#ec4899","authMode":"oauth2","audience":"https://your-audience","validatorAudience":"https://your-val-audience"}]'
+# Each node has a "network" field: "local", "devnet", "testnet", or "mainnet"
+VITE_NODES='[{"id":"devnet","name":"Devnet","network":"devnet","jsonApiUrl":"http://1.2.3.4:7575/api/json-api","validatorApiUrl":"http://1.2.3.4:5003","color":"#ec4899","authMode":"oauth2","audience":"https://your-audience","validatorAudience":"https://your-val-audience"}]'
 ```
 
 **Secret (server-side only — never in client bundle):**
@@ -264,6 +275,7 @@ CRON_SECRET=<your-random-secret>
 | `GET /api/proxy/{base64url-origin}/{path}` | Forward requests to Canton APIs — validates allowed targets, blocks localhost |
 | `GET /api/templates?nodeId=xxx` | Serve cached template index from Redis |
 | `GET /api/cron/index-templates` | Cron-triggered template indexing (secured by `CRON_SECRET`) |
+| `POST /api/cron/index-templates` | Manual index trigger (same-origin auth, 5-min cooldown) |
 
 ### Cron Jobs
 
@@ -271,7 +283,7 @@ CRON_SECRET=<your-random-secret>
 |----------|------|---------|
 | `0 3 * * *` (daily at 3 AM UTC) | `/api/cron/index-templates` | Index templates for all configured nodes |
 
-On Vercel's free tier, cron jobs run once per day. Upgrade to Pro for more frequent scheduling. You can also trigger indexing manually via the "Refresh Index Now" button in Settings.
+On Vercel's free tier, cron jobs run once per day. Upgrade to Pro for more frequent scheduling. You can also trigger indexing manually via the "Refresh Index Now" button in Settings (subject to a 5-minute cooldown to protect the Upstash Redis quota).
 
 ### Deploy
 
