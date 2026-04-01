@@ -154,9 +154,8 @@ export function useActiveContracts(request: ActiveContractsRequest | null, key?:
     },
     enabled: !!request,
     retry: (failureCount, error) => {
-      // Don't retry 413 / 200-limit errors — they won't succeed on retry
-      const axiosErr = error as { response?: { status?: number; data?: { code?: string } } }
-      if (axiosErr.response?.status === 413 || axiosErr.response?.data?.code === 'JSON_API_MAXIMUM_LIST_ELEMENTS_NUMBER_REACHED') return false
+      // Don't retry 200-limit errors — they won't succeed on retry
+      if ((error as { isLimitError?: boolean }).isLimitError) return false
       return failureCount < 2
     },
   })
