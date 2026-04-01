@@ -18,7 +18,7 @@ import { CopyButton } from '@/components/common/CopyButton'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { ErrorDisplay } from '@/components/common/ErrorDisplay'
 import { EmptyState } from '@/components/common/EmptyState'
-import { usePackages, useNodeConfig, useTemplateIndex, useActiveContracts } from '@/hooks/useCantonQuery'
+import { usePackages, useNodeConfig, useTemplateIndex, useActiveContracts, useFlatUsers } from '@/hooks/useCantonQuery'
 import { buildTemplateFilter } from '@/api/canton'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { autoQueryContractsAtom } from '@/stores/nodeStore'
@@ -221,13 +221,20 @@ export function PackagesPage() {
     return map
   }, [templateIndex.data])
 
-  // Get a party for active contract queries (first user party)
-  // Only used if autoQueryContracts is enabled
+  // Get a party for active contract queries — only fetch users when auto-query is on
+  const autoQuery = useAtomValue(autoQueryContractsAtom)
+  const users = useFlatUsers()
   const partyId = useMemo(() => {
-    // We'll use the node's adminUser or first discovered party — but we don't eagerly fetch users
-    // The party will be passed down only when autoQuery is on
-    return node.adminUser || undefined
-  }, [node.adminUser])
+    if (!autoQuery) return undefined
+    // Use adminUser if set, otherwise first user's primaryParty
+    if (node.adminUser) return node.adminUser
+    for (const entry of users.users ?? []) {
+      const u = (entry as Record<string, unknown>)?.user as Record<string, unknown> | undefined
+      const party = ((u?.primaryParty ?? (entry as Record<string, unknown>)?.primaryParty) as string)
+      if (party) return party
+    }
+    return undefined
+  }, [autoQuery, node.adminUser, users.users])
 
   // Merge: all package IDs + indexed info, sorted (named first, then unnamed)
   const mergedPackages = useMemo(() => {
@@ -323,7 +330,7 @@ export function PackagesPage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="Search by package name, ID, or template..."
+          placeholder="Search packages..."
           className="max-w-md"
         />
         {search && <Badge variant="outline">{filteredPackages.length} match(es)</Badge>}
