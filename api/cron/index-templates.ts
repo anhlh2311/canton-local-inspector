@@ -332,25 +332,41 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(204).end()
 
-  // Auth: Accept CRON_SECRET (Vercel cron) or manual trigger from same origin
+  // Auth: Accept CRON_SECRET (Vercel cron) or same-origin POST (manual trigger from UI)
   const authHeader = req.headers.authorization
   const cronSecret = process.env.CRON_SECRET
-  const isManualTrigger = req.method === 'POST'
+  const isManualPost = req.method === 'POST'
 
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}` && !isManualTrigger) {
-    return res.status(401).json({ error: 'Unauthorized' })
-  }
-  // For manual POST triggers, verify origin is same-site
-  if (isManualTrigger && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    const origin = req.headers.origin || req.headers.referer || ''
+  if (isManualPost) {
+    // Manual trigger: verify same-origin (Origin header must match Host)
+    const origin = (req.headers.origin || '') as string
     const host = req.headers.host || ''
-    if (!origin.includes(host) && host !== 'localhost') {
+    const isSameOrigin = host && origin.includes(host)
+    const hasCronSecret = cronSecret && authHeader === `Bearer ${cronSecret}`
+    if (!isSameOrigin && !hasCronSecret) {
+      return res.status(401).json({ error: 'Unauthorized — must be same-origin or include CRON_SECRET' })
+    }
+  } else {
+    // GET (Vercel cron): require CRON_SECRET
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
       return res.status(401).json({ error: 'Unauthorized' })
     }
   }
 
   const redis = getRedis()
   const startTime = Date.now()
+
+  // Cooldown: reject if last run was less than 5 minutes ago
+  const COOLDOWN_MS = 5 * 60 * 1000
+  const lastRunTs = await redis.get<number>('canton:cron:lastRunTs')
+  if (lastRunTs && (Date.now() - lastRunTs) < COOLDOWN_MS) {
+    const remainingSec = Math.ceil((COOLDOWN_MS - (Date.now() - lastRunTs)) / 1000)
+    return res.status(429).json({
+      error: 'Cooldown active',
+      details: `Last indexing ran ${Math.round((Date.now() - lastRunTs) / 1000)}s ago. Try again in ${remainingSec}s.`,
+      retryAfterSec: remainingSec,
+    })
+  }
 
   // Acquire lock (120s TTL)
   const lockAcquired = await redis.set('canton:cron:lock', 'running', { nx: true, ex: 120 })
@@ -398,13 +414,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     )
 
-    // Store cron metadata
+    // Store cron metadata + cooldown timestamp
     const meta = {
       lastRun: new Date().toISOString(),
       durationMs: Date.now() - startTime,
       results,
     }
-    await redis.set('canton:cron:meta', meta)
+    await Promise.all([
+      redis.set('canton:cron:meta', meta),
+      redis.set('canton:cron:lastRunTs', Date.now()),
+    ])
 
     return res.status(200).json(meta)
   } finally {

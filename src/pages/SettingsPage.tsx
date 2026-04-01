@@ -364,17 +364,27 @@ function TemplateIndexStatus() {
   const queryClient = useQueryClient()
   const [refreshing, setRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [cooldownSec, setCooldownSec] = useState(0)
 
   const handleRefresh = async () => {
     setRefreshing(true)
     setRefreshError(null)
+    setCooldownSec(0)
     try {
       await triggerIndexRefresh()
       queryClient.invalidateQueries({ queryKey: ['cron-meta'] })
       queryClient.invalidateQueries({ queryKey: ['template-index'] })
       queryClient.invalidateQueries({ queryKey: ['discover-templates'] })
     } catch (err) {
-      setRefreshError(err instanceof Error ? err.message : 'Failed to refresh')
+      // Parse cooldown from 429 response
+      const axiosErr = err as { response?: { status?: number; data?: { retryAfterSec?: number; details?: string } } }
+      if (axiosErr.response?.status === 429) {
+        const sec = axiosErr.response.data?.retryAfterSec ?? 300
+        setCooldownSec(sec)
+        setRefreshError(`Cooldown: try again in ${Math.ceil(sec / 60)} min`)
+      } else {
+        setRefreshError(err instanceof Error ? err.message : 'Failed to refresh')
+      }
     } finally {
       setRefreshing(false)
     }
@@ -424,9 +434,9 @@ function TemplateIndexStatus() {
         )}
 
         {refreshError && <p className="text-xs text-destructive">{refreshError}</p>}
-        <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+        <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing || cooldownSec > 0}>
           {refreshing ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5 mr-1" />}
-          {refreshing ? 'Indexing...' : 'Refresh Index Now'}
+          {refreshing ? 'Indexing...' : cooldownSec > 0 ? `Cooldown (${Math.ceil(cooldownSec / 60)}m)` : 'Refresh Index Now'}
         </Button>
       </CardContent>
     </Card>
