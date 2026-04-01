@@ -393,29 +393,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const results: Record<string, IndexResult> = {}
 
-    // Process all nodes in parallel
+    // Group nodes by network — multiple nodes on the same network share one template index
+    const networkNodes: Record<string, NodeConfig[]> = {}
+    for (const node of nodes) {
+      const net = node.network || node.id
+      if (!networkNodes[net]) networkNodes[net] = []
+      networkNodes[net].push(node)
+    }
+
+    // Process each network in parallel, merge templates from all its nodes
     await Promise.allSettled(
-      nodes.map(async (node) => {
-        // Skip localhost nodes (unreachable from Vercel)
-        if (isLocalhost(node.jsonApiUrl)) {
-          results[node.id] = { status: 'skipped', templateCount: 0, updatedAt: new Date().toISOString() }
+      Object.entries(networkNodes).map(async ([network, netNodes]) => {
+        // Skip networks where all nodes are localhost
+        if (netNodes.every((n) => isLocalhost(n.jsonApiUrl))) {
+          results[network] = { status: 'skipped', templateCount: 0, updatedAt: new Date().toISOString() }
           return
         }
 
         try {
-          const templates = await indexNode(node, redis)
-          await redis.set(`canton:templates:${node.id}`, {
+          // Index all nodes in this network and merge their templates
+          const allTemplates = new Map<string, TemplateEntry>()
+          const nodeResults = await Promise.allSettled(
+            netNodes.filter((n) => !isLocalhost(n.jsonApiUrl)).map((n) => indexNode(n, redis))
+          )
+          for (const result of nodeResults) {
+            if (result.status === 'fulfilled') {
+              for (const t of result.value) allTemplates.set(t.templateId, t)
+            }
+          }
+          const templates = [...allTemplates.values()]
+          await redis.set(`canton:templates:${network}`, {
             updatedAt: new Date().toISOString(),
-            network: node.network || null,
+            network,
             templates,
           })
-          results[node.id] = {
+          results[network] = {
             status: 'ok',
             templateCount: templates.length,
             updatedAt: new Date().toISOString(),
           }
         } catch (err) {
-          results[node.id] = {
+          results[network] = {
             status: 'error',
             templateCount: 0,
             error: err instanceof Error ? err.message : 'Unknown error',

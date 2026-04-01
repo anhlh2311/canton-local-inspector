@@ -51,9 +51,9 @@ export interface CronMeta {
   results: Record<string, { status: string; templateCount: number; error?: string; updatedAt: string }>
 }
 
-/** Fetch the pre-built template index for a node (from cron job cache). */
-export async function fetchTemplateIndex(nodeId: string): Promise<TemplateIndex> {
-  const res = await axios.get('/api/templates', { params: { nodeId } })
+/** Fetch the pre-built template index by network (from cron job cache). */
+export async function fetchTemplateIndex(network: string): Promise<TemplateIndex> {
+  const res = await axios.get('/api/templates', { params: { network } })
   return res.data
 }
 
@@ -406,7 +406,7 @@ async function discoverTemplateIds(
   // Strategy 0: Pre-built index from cron job (Vercel only, fastest path)
   if (isVercel) {
     try {
-      const index = await fetchTemplateIndex(node.id)
+      const index = await fetchTemplateIndex(node.network || node.id)
       if (index.updatedAt && index.templates.length > 0) {
         const networkKey = getNetworkKey(node)
         nodeNetworkMap[node.id] = networkKey

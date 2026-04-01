@@ -41,13 +41,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ meta: meta ?? null })
   }
 
-  // Return template index for a specific node
-  const nodeId = req.query.nodeId as string
-  if (!nodeId) {
-    return res.status(400).json({ error: 'Missing nodeId query param' })
+  // Return template index by network (or nodeId for backward compatibility)
+  const network = (req.query.network || req.query.nodeId) as string
+  if (!network) {
+    return res.status(400).json({ error: 'Missing network query param' })
   }
 
-  const index = await redis.get<TemplateIndex>(`canton:templates:${nodeId}`)
+  const index = await redis.get<TemplateIndex>(`canton:templates:${network}`)
   res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=300')
   return res.status(200).json(index ?? { updatedAt: null, templates: [] })
 }
