@@ -18,7 +18,7 @@ import { CopyButton } from '@/components/common/CopyButton'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { ErrorDisplay } from '@/components/common/ErrorDisplay'
 import { EmptyState } from '@/components/common/EmptyState'
-import { usePackages, useNodeConfig, useTemplateIndex, useActiveContracts, useFlatUsers } from '@/hooks/useCantonQuery'
+import { usePackages, useNodeConfig, useTemplateIndex, useActiveContracts, useFlatUsers, useLedgerEnd } from '@/hooks/useCantonQuery'
 import { buildTemplateFilter } from '@/api/canton'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { autoQueryContractsAtom } from '@/stores/nodeStore'
@@ -45,6 +45,9 @@ function PackageCard({
   partyId: string | undefined
 }) {
   const autoQuery = useAtomValue(autoQueryContractsAtom)
+  // Fetch ledger-end ONCE for all template rows in this card
+  const ledgerEnd = useLedgerEnd()
+  const offset = ledgerEnd.data?.offset
 
   return (
     <Card className={expanded ? 'border-primary/50' : ''}>
@@ -128,6 +131,7 @@ function PackageCard({
                           partyId={partyId}
                           autoQuery={autoQuery}
                           expanded={expanded}
+                          offset={offset}
                         />
                       ))}
                   </div>
@@ -154,14 +158,16 @@ function TemplateRow({
   partyId,
   autoQuery,
   expanded,
+  offset,
 }: {
   template: TemplateIndexEntry
   partyId: string | undefined
   autoQuery: boolean
   expanded: boolean
+  offset: string | undefined
 }) {
-  const shouldQuery = autoQuery && expanded && !!partyId
-  const filter = shouldQuery ? buildTemplateFilter(partyId!, template.templateId) : null
+  const shouldQuery = autoQuery && expanded && !!partyId && !!offset
+  const filter = shouldQuery ? buildTemplateFilter(partyId!, template.templateId, offset) : null
   const contracts = useActiveContracts(filter, `pkg-${template.templateId}`)
   const count = contracts.data ? (contracts.data as ActiveContract[]).length : null
 

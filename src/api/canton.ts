@@ -772,7 +772,7 @@ export async function generateSharedSecretToken(): Promise<string> {
 
 // ---- Helper: Build active contracts filter ----
 
-export function buildTemplateFilter(partyId: string, templateId: string): ActiveContractsRequest {
+export function buildTemplateFilter(partyId: string, templateId: string, activeAtOffset?: string): ActiveContractsRequest {
   return {
     filter: {
       filtersByParty: {
@@ -788,6 +788,7 @@ export function buildTemplateFilter(partyId: string, templateId: string): Active
       }
     },
     verbose: true,
+    ...(activeAtOffset ? { activeAtOffset } : {}),
   }
 }
 
