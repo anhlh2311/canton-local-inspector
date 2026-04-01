@@ -356,10 +356,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const redis = getRedis()
   const startTime = Date.now()
 
-  // Cooldown: reject if last run was less than 5 minutes ago
+  // Cooldown: reject if last run was less than 5 minutes ago (skip with ?force=true)
+  const skipCooldown = req.query.force === 'true'
   const COOLDOWN_MS = 5 * 60 * 1000
   const lastRunTs = await redis.get<number>('canton:cron:lastRunTs')
-  if (lastRunTs && (Date.now() - lastRunTs) < COOLDOWN_MS) {
+  if (!skipCooldown && lastRunTs && (Date.now() - lastRunTs) < COOLDOWN_MS) {
     const remainingSec = Math.ceil((COOLDOWN_MS - (Date.now() - lastRunTs)) / 1000)
     return res.status(429).json({
       error: 'Cooldown active',

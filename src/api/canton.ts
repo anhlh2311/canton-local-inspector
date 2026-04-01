@@ -63,9 +63,11 @@ export async function fetchCronMeta(): Promise<CronMeta | null> {
   return res.data.meta ?? null
 }
 
-/** Manually trigger template index refresh. */
-export async function triggerIndexRefresh(): Promise<Record<string, unknown>> {
-  const res = await axios.post('/api/cron/index-templates')
+/** Manually trigger template index refresh. Pass force=true to skip cooldown. */
+export async function triggerIndexRefresh(force?: boolean): Promise<Record<string, unknown>> {
+  const res = await axios.post('/api/cron/index-templates', null, {
+    params: force ? { force: 'true' } : undefined,
+  })
   return res.data
 }
 

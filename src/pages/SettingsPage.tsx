@@ -365,13 +365,14 @@ function TemplateIndexStatus() {
   const [refreshing, setRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [cooldownSec, setCooldownSec] = useState(0)
+  const forceMode = new URLSearchParams(window.location.search).get('force') === 'true'
 
   const handleRefresh = async () => {
     setRefreshing(true)
     setRefreshError(null)
     setCooldownSec(0)
     try {
-      await triggerIndexRefresh()
+      await triggerIndexRefresh(forceMode)
       queryClient.invalidateQueries({ queryKey: ['cron-meta'] })
       queryClient.invalidateQueries({ queryKey: ['template-index'] })
       queryClient.invalidateQueries({ queryKey: ['discover-templates'] })
