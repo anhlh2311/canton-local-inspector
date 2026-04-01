@@ -30,6 +30,45 @@ export async function deleteNodeCredentials(nodeId: string): Promise<void> {
   await axios.delete('/api/auth/credentials', { params: { nodeId } })
 }
 
+// ---- Template Index (cron-backed) ----
+
+export interface TemplateIndexEntry {
+  templateId: string
+  packageId: string
+  packageName: string
+  module: string
+  entity: string
+}
+
+export interface TemplateIndex {
+  updatedAt: string | null
+  templates: TemplateIndexEntry[]
+}
+
+export interface CronMeta {
+  lastRun: string
+  durationMs: number
+  results: Record<string, { status: string; templateCount: number; error?: string; updatedAt: string }>
+}
+
+/** Fetch the pre-built template index for a node (from cron job cache). */
+export async function fetchTemplateIndex(nodeId: string): Promise<TemplateIndex> {
+  const res = await axios.get('/api/templates', { params: { nodeId } })
+  return res.data
+}
+
+/** Fetch cron job metadata (last run, per-node status). */
+export async function fetchCronMeta(): Promise<CronMeta | null> {
+  const res = await axios.get('/api/templates', { params: { meta: 'true' } })
+  return res.data.meta ?? null
+}
+
+/** Manually trigger template index refresh. */
+export async function triggerIndexRefresh(): Promise<Record<string, unknown>> {
+  const res = await axios.post('/api/cron/index-templates')
+  return res.data
+}
+
 function encodeOriginBase64url(origin: string): string {
   return btoa(origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
@@ -336,6 +375,27 @@ async function discoverTemplateIds(
 ): Promise<Set<string>> {
   const client = createJsonApiClient(node, token)
   const templateIds = new Set<string>()
+
+  // Strategy 0: Pre-built index from cron job (Vercel only, fastest path)
+  if (isVercel) {
+    try {
+      const index = await fetchTemplateIndex(node.id)
+      if (index.updatedAt && index.templates.length > 0) {
+        for (const t of index.templates) {
+          templateIds.add(t.templateId)
+          // Also populate cross-network knowledge
+          if (t.packageName) {
+            if (!packageNameMap[node.id]) packageNameMap[node.id] = {}
+            packageNameMap[node.id][t.packageId] = t.packageName
+            if (!knownTemplatePatterns[t.packageName]) knownTemplatePatterns[t.packageName] = new Set()
+            knownTemplatePatterns[t.packageName].add(`${t.module}:${t.entity}`)
+          }
+        }
+        for (const tid of constructTemplateIds(node.id)) templateIds.add(tid)
+        return templateIds
+      }
+    } catch { /* Index not available, fall through to live discovery */ }
+  }
 
   function addTemplateIds(contracts: ActiveContract[]) {
     learnFromContracts(node.id, contracts)

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
-import { Settings, Plus, Trash2, Save, RotateCcw, Eye, EyeOff, Globe, Key, Loader2 } from 'lucide-react'
+import { Settings, Plus, Trash2, Save, RotateCcw, Eye, EyeOff, Globe, Key, Loader2, Layers } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,9 @@ import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { nodesAtom, refreshIntervalAtom, selectedNodeIdAtom } from '@/stores/nodeStore'
 import { DEFAULT_NODES } from '@/constants/nodes'
-import { saveNodeCredentials, deleteNodeCredentials } from '@/api/canton'
+import { saveNodeCredentials, deleteNodeCredentials, triggerIndexRefresh } from '@/api/canton'
+import { useCronMeta } from '@/hooks/useCantonQuery'
+import { useQueryClient } from '@tanstack/react-query'
 import type { NodeConfig, AuthConfig } from '@/types/canton'
 
 const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
@@ -340,6 +342,80 @@ function NodeConfigCard({
   )
 }
 
+function TemplateIndexStatus() {
+  const cronMeta = useCronMeta()
+  const queryClient = useQueryClient()
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    setRefreshError(null)
+    try {
+      await triggerIndexRefresh()
+      queryClient.invalidateQueries({ queryKey: ['cron-meta'] })
+      queryClient.invalidateQueries({ queryKey: ['template-index'] })
+      queryClient.invalidateQueries({ queryKey: ['discover-templates'] })
+    } catch (err) {
+      setRefreshError(err instanceof Error ? err.message : 'Failed to refresh')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const meta = cronMeta.data
+  const lastRunAgo = meta?.lastRun
+    ? `${Math.round((Date.now() - new Date(meta.lastRun).getTime()) / 60000)} min ago`
+    : 'never'
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <Layers className="h-4 w-4" />
+          Template Index
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="text-xs text-muted-foreground">
+          {meta ? (
+            <span>Last indexed: {lastRunAgo} (took {(meta.durationMs / 1000).toFixed(1)}s)</span>
+          ) : (
+            <span>No index data yet. Run the indexer to discover templates.</span>
+          )}
+        </div>
+
+        {meta?.results && (
+          <div className="space-y-1">
+            {Object.entries(meta.results).map(([nodeId, result]) => (
+              <div key={nodeId} className="flex items-center justify-between text-xs">
+                <span className="font-mono text-muted-foreground">{nodeId}</span>
+                <div className="flex items-center gap-2">
+                  {result.status === 'ok' && (
+                    <Badge variant="success" className="text-[10px]">{result.templateCount} templates</Badge>
+                  )}
+                  {result.status === 'error' && (
+                    <Badge variant="destructive" className="text-[10px]">error</Badge>
+                  )}
+                  {result.status === 'skipped' && (
+                    <Badge variant="secondary" className="text-[10px]">skipped</Badge>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {refreshError && <p className="text-xs text-destructive">{refreshError}</p>}
+        <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+          {refreshing ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5 mr-1" />}
+          {refreshing ? 'Indexing...' : 'Refresh Index Now'}
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function SettingsPage() {
   const [nodes, setNodes] = useAtom(nodesAtom)
   const [refreshInterval, setRefreshInterval] = useAtom(refreshIntervalAtom)
@@ -439,6 +515,9 @@ export function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Template Index (Vercel only) */}
+      {isVercel && <TemplateIndexStatus />}
 
       <Separator />
 

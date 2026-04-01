@@ -208,3 +208,26 @@ export function useNodeHealth() {
     refetchInterval: 30000,
   })
 }
+
+/** Pre-built template index from cron job (Vercel only). */
+export function useTemplateIndex() {
+  const node = useNodeConfig()
+  const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
+  return useQuery({
+    queryKey: ['template-index', node.id],
+    queryFn: () => api.fetchTemplateIndex(node.id),
+    staleTime: 60000,
+    enabled: isVercel,
+  })
+}
+
+/** Cron job metadata — last run time, per-node status. */
+export function useCronMeta() {
+  const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
+  return useQuery({
+    queryKey: ['cron-meta'],
+    queryFn: () => api.fetchCronMeta(),
+    staleTime: 30000,
+    enabled: isVercel,
+  })
+}

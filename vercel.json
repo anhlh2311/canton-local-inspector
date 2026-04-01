@@ -3,6 +3,12 @@
   "buildCommand": "yarn build",
   "outputDirectory": "dist",
   "framework": null,
+  "crons": [
+    {
+      "path": "/api/cron/index-templates",
+      "schedule": "0 3 * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/api/proxy/:path(.*)", "destination": "/api/proxy?_path=:path" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
