@@ -288,16 +288,25 @@ export async function discoverAllContracts(
   return allContracts
 }
 
-// Global registry: packageName → Set<Module:Entity> — learned from ANY successful query
-// on ANY node. Since Module:Entity names are stable across networks, this lets us construct
-// template IDs on nodes where wildcard queries fail.
-const knownTemplatePatterns: Record<string, Set<string>> = {}
+// Per-network registry: network → packageName → Set<Module:Entity>
+// Cross-network construction only applies within the same network (package hashes differ between networks).
+const knownTemplatePatterns: Record<string, Record<string, Set<string>>> = {}
 
 // Per-node: packageId → packageName mapping (discovered from contracts or scan proxy)
 const packageNameMap: Record<string, Record<string, string>> = {}
 
-function learnFromContracts(nodeId: string, contracts: ActiveContract[]) {
-  if (!packageNameMap[nodeId]) packageNameMap[nodeId] = {}
+// Node → network mapping (set when discovery runs)
+const nodeNetworkMap: Record<string, string> = {}
+
+function getNetworkKey(node: NodeConfig): string {
+  return node.network || node.id
+}
+
+function learnFromContracts(node: NodeConfig, contracts: ActiveContract[]) {
+  const networkKey = getNetworkKey(node)
+  nodeNetworkMap[node.id] = networkKey
+  if (!packageNameMap[node.id]) packageNameMap[node.id] = {}
+  if (!knownTemplatePatterns[networkKey]) knownTemplatePatterns[networkKey] = {}
   for (const c of contracts) {
     const evt = c?.contractEntry?.JsActiveContract?.createdEvent
     if (!evt?.templateId) continue
@@ -308,20 +317,20 @@ function learnFromContracts(nodeId: string, contracts: ActiveContract[]) {
     const pkgId = tid.slice(0, colonIdx)
     const moduleEntity = tid.slice(colonIdx + 1)
     if (pkgName) {
-      packageNameMap[nodeId][pkgId] = pkgName
-      if (!knownTemplatePatterns[pkgName]) knownTemplatePatterns[pkgName] = new Set()
-      knownTemplatePatterns[pkgName].add(moduleEntity)
+      packageNameMap[node.id][pkgId] = pkgName
+      if (!knownTemplatePatterns[networkKey][pkgName]) knownTemplatePatterns[networkKey][pkgName] = new Set()
+      knownTemplatePatterns[networkKey][pkgName].add(moduleEntity)
     }
   }
 }
 
-function learnFromScanProxy(nodeId: string, templateId: string) {
-  // Scan proxy template_ids don't include packageName, but we can learn the packageId
+function learnFromScanProxy(node: NodeConfig, templateId: string) {
+  const networkKey = getNetworkKey(node)
+  nodeNetworkMap[node.id] = networkKey
   const colonIdx = templateId.indexOf(':')
   if (colonIdx < 0) return
   const pkgId = templateId.slice(0, colonIdx)
   const moduleEntity = templateId.slice(colonIdx + 1)
-  // Infer package name from Splice module prefix
   const spliceModuleMap: Record<string, string> = {
     'Splice.Amulet': 'splice-amulet', 'Splice.AmuletRules': 'splice-amulet',
     'Splice.AmuletTransferInstruction': 'splice-amulet', 'Splice.Round': 'splice-amulet',
@@ -332,26 +341,27 @@ function learnFromScanProxy(nodeId: string, templateId: string) {
     'Splice.Wallet': 'splice-wallet',
   }
   const moduleName = moduleEntity.split(':')[0]
-  // Match against known module prefixes
   for (const [prefix, pkgName] of Object.entries(spliceModuleMap)) {
     if (moduleName === prefix || moduleName.startsWith(prefix + '.')) {
-      if (!packageNameMap[nodeId]) packageNameMap[nodeId] = {}
-      packageNameMap[nodeId][pkgId] = pkgName
-      if (!knownTemplatePatterns[pkgName]) knownTemplatePatterns[pkgName] = new Set()
-      knownTemplatePatterns[pkgName].add(moduleEntity)
+      if (!packageNameMap[node.id]) packageNameMap[node.id] = {}
+      packageNameMap[node.id][pkgId] = pkgName
+      if (!knownTemplatePatterns[networkKey]) knownTemplatePatterns[networkKey] = {}
+      if (!knownTemplatePatterns[networkKey][pkgName]) knownTemplatePatterns[networkKey][pkgName] = new Set()
+      knownTemplatePatterns[networkKey][pkgName].add(moduleEntity)
       return
     }
   }
 }
 
-/** Construct template IDs for a node by combining its package IDs with known Module:Entity patterns.
- *  Returns full templateId strings (packageId:Module:Entity) for templates likely to exist. */
-function constructTemplateIds(nodeId: string): Set<string> {
+/** Construct template IDs for a node by combining its package IDs with known Module:Entity patterns
+ *  from the SAME network. Returns full templateId strings (packageId:Module:Entity). */
+function constructTemplateIds(node: NodeConfig): Set<string> {
   const result = new Set<string>()
-  const nodePkgMap = packageNameMap[nodeId] ?? {}
-  // For each packageId on this node, find known templates via packageName
+  const networkKey = getNetworkKey(node)
+  const nodePkgMap = packageNameMap[node.id] ?? {}
+  const networkPatterns = knownTemplatePatterns[networkKey] ?? {}
   for (const [pkgId, pkgName] of Object.entries(nodePkgMap)) {
-    const patterns = knownTemplatePatterns[pkgName]
+    const patterns = networkPatterns[pkgName]
     if (patterns) {
       for (const moduleEntity of patterns) {
         result.add(`${pkgId}:${moduleEntity}`)
@@ -381,24 +391,26 @@ async function discoverTemplateIds(
     try {
       const index = await fetchTemplateIndex(node.id)
       if (index.updatedAt && index.templates.length > 0) {
+        const networkKey = getNetworkKey(node)
+        nodeNetworkMap[node.id] = networkKey
+        if (!packageNameMap[node.id]) packageNameMap[node.id] = {}
+        if (!knownTemplatePatterns[networkKey]) knownTemplatePatterns[networkKey] = {}
         for (const t of index.templates) {
           templateIds.add(t.templateId)
-          // Also populate cross-network knowledge
           if (t.packageName) {
-            if (!packageNameMap[node.id]) packageNameMap[node.id] = {}
             packageNameMap[node.id][t.packageId] = t.packageName
-            if (!knownTemplatePatterns[t.packageName]) knownTemplatePatterns[t.packageName] = new Set()
-            knownTemplatePatterns[t.packageName].add(`${t.module}:${t.entity}`)
+            if (!knownTemplatePatterns[networkKey][t.packageName]) knownTemplatePatterns[networkKey][t.packageName] = new Set()
+            knownTemplatePatterns[networkKey][t.packageName].add(`${t.module}:${t.entity}`)
           }
         }
-        for (const tid of constructTemplateIds(node.id)) templateIds.add(tid)
+        for (const tid of constructTemplateIds(node)) templateIds.add(tid)
         return templateIds
       }
     } catch { /* Index not available, fall through to live discovery */ }
   }
 
   function addTemplateIds(contracts: ActiveContract[]) {
-    learnFromContracts(node.id, contracts)
+    learnFromContracts(node, contracts)
     for (const c of contracts) {
       const tid = c?.contractEntry?.JsActiveContract?.createdEvent?.templateId
       if (tid) templateIds.add(tid)
@@ -417,7 +429,7 @@ async function discoverTemplateIds(
       // Extract template_ids from scan proxy responses
       if (amuletRulesRes.status === 'fulfilled') {
         const tid = amuletRulesRes.value.data?.amulet_rules?.contract?.template_id
-        if (tid) { templateIds.add(tid); learnFromScanProxy(node.id, tid) }
+        if (tid) { templateIds.add(tid); learnFromScanProxy(node, tid) }
       }
       if (roundsRes.status === 'fulfilled') {
         const data = roundsRes.value.data
@@ -425,7 +437,7 @@ async function discoverTemplateIds(
           if (Array.isArray(data[key])) {
             for (const r of data[key]) {
               const tid = r?.contract?.template_id
-              if (tid) { templateIds.add(tid); learnFromScanProxy(node.id, tid) }
+              if (tid) { templateIds.add(tid); learnFromScanProxy(node, tid) }
             }
           }
         }
@@ -444,7 +456,7 @@ async function discoverTemplateIds(
     })
     addTemplateIds(res.data as ActiveContract[])
     // Construct additional templates from cross-network knowledge
-    for (const tid of constructTemplateIds(node.id)) templateIds.add(tid)
+    for (const tid of constructTemplateIds(node)) templateIds.add(tid)
     return templateIds
   } catch { /* Hit 200 limit */ }
 
@@ -481,7 +493,7 @@ async function discoverTemplateIds(
   } catch { /* continue */ }
 
   // Strategy 4: Cross-network construction — use learned patterns from other nodes
-  for (const tid of constructTemplateIds(node.id)) templateIds.add(tid)
+  for (const tid of constructTemplateIds(node)) templateIds.add(tid)
 
   return templateIds
 }

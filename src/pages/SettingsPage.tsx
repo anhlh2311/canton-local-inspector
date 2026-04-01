@@ -221,6 +221,9 @@ function NodeConfigCard({
             <Badge variant={isLocal ? 'secondary' : 'outline'} className="text-[10px]">
               {isLocal ? 'Local' : 'Remote'}
             </Badge>
+            {node.network && (
+              <Badge variant="outline" className="text-[10px] capitalize">{node.network}</Badge>
+            )}
             <Badge variant="outline" className="text-[10px]">
               {node.auth.mode === 'oauth2' ? 'OAuth2' : 'Shared Secret'}
             </Badge>
@@ -237,10 +240,24 @@ function NodeConfigCard({
 
         {editing ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
+            <div className="grid grid-cols-4 gap-2">
+              <div className="col-span-2">
                 <label className="text-[10px] text-muted-foreground">Name</label>
                 <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground">Network</label>
+                <select
+                  value={form.network || ''}
+                  onChange={(e) => setForm({ ...form, network: (e.target.value || undefined) as NodeConfig['network'] })}
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                >
+                  <option value="">—</option>
+                  <option value="local">Local</option>
+                  <option value="devnet">Devnet</option>
+                  <option value="testnet">Testnet</option>
+                  <option value="mainnet">Mainnet</option>
+                </select>
               </div>
               <div>
                 <label className="text-[10px] text-muted-foreground">Color</label>

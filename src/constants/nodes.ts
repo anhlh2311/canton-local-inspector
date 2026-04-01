@@ -57,6 +57,7 @@ function parseNodesFromEnv(): NodeConfig[] | null {
       return {
         id: (n.id as string) || `env-node-${i}`,
         name: (n.name as string) || `Node ${i + 1}`,
+        network: (n.network as string as NodeConfig['network']) || undefined,
         jsonApiUrl: (n.jsonApiUrl as string) || 'http://localhost',
         jsonApiPort: Number(n.jsonApiPort) || 0,
         validatorApiUrl: (n.validatorApiUrl as string) || '',
@@ -115,6 +116,7 @@ const QUICKSTART_NODES: NodeConfig[] = [
   {
     id: 'trading-partner',
     name: 'Trading Partner',
+    network: 'local',
     jsonApiUrl: 'http://localhost',
     jsonApiPort: 1975,
     validatorApiUrl: 'http://localhost',
@@ -126,6 +128,7 @@ const QUICKSTART_NODES: NodeConfig[] = [
   {
     id: 'app-user',
     name: 'App User',
+    network: 'local',
     jsonApiUrl: 'http://localhost',
     jsonApiPort: 2975,
     validatorApiUrl: 'http://localhost',
@@ -137,6 +140,7 @@ const QUICKSTART_NODES: NodeConfig[] = [
   {
     id: 'app-provider',
     name: 'App Provider',
+    network: 'local',
     jsonApiUrl: 'http://localhost',
     jsonApiPort: 3975,
     validatorApiUrl: 'http://localhost',
@@ -148,6 +152,7 @@ const QUICKSTART_NODES: NodeConfig[] = [
   {
     id: 'super-validator',
     name: 'Super Validator',
+    network: 'local',
     jsonApiUrl: 'http://localhost',
     jsonApiPort: 4975,
     validatorApiUrl: 'http://localhost',

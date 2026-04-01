@@ -31,6 +31,7 @@ interface NodeAuthEnvConfig {
 interface NodeConfig {
   id: string
   name: string
+  network?: string
   jsonApiUrl: string
   jsonApiPort: number
   validatorApiUrl: string
@@ -98,6 +99,7 @@ function parseNodesFromEnv(): NodeConfig[] {
     return nodes.map((n, i) => ({
       id: (n.id as string) || `env-node-${i}`,
       name: (n.name as string) || `Node ${i + 1}`,
+      network: (n.network as string) || undefined,
       jsonApiUrl: (n.jsonApiUrl as string) || '',
       jsonApiPort: Number(n.jsonApiPort) || 0,
       validatorApiUrl: (n.validatorApiUrl as string) || '',
@@ -365,7 +367,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const results: Record<string, IndexResult> = {}
 
     // Process all nodes in parallel
-    const nodeResults = await Promise.allSettled(
+    await Promise.allSettled(
       nodes.map(async (node) => {
         // Skip localhost nodes (unreachable from Vercel)
         if (isLocalhost(node.jsonApiUrl)) {
@@ -377,6 +379,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const templates = await indexNode(node, redis)
           await redis.set(`canton:templates:${node.id}`, {
             updatedAt: new Date().toISOString(),
+            network: node.network || null,
             templates,
           })
           results[node.id] = {

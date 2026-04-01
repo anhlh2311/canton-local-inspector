@@ -21,10 +21,14 @@ export interface OAuth2Auth {
 
 export type AuthConfig = SharedSecretAuth | OAuth2Auth
 
+export type NetworkId = 'devnet' | 'testnet' | 'mainnet' | 'local'
+
 export interface NodeConfig {
   id: string
   name: string
   color: string
+  // Network identifier — keeps template indexes namespaced per network
+  network?: NetworkId
   // Connection — supports both local (url+port) and remote (full URL) modes
   jsonApiUrl: string
   jsonApiPort: number
