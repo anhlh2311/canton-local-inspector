@@ -376,7 +376,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const nodes = parseNodesFromEnv()
+    // For manual POST triggers, use nodes from request body (includes dynamically-added nodes).
+    // For scheduled GET (Vercel cron), use VITE_NODES env var only.
+    const bodyNodes = (isManualPost && req.body?.nodes) as NodeConfig[] | undefined
+    const envNodes = parseNodesFromEnv()
+    // Merge: body nodes override env nodes with same ID, then append new ones
+    const nodeMap = new Map<string, NodeConfig>()
+    for (const n of envNodes) nodeMap.set(n.id, n)
+    if (bodyNodes) {
+      for (const n of bodyNodes) nodeMap.set(n.id, n)
+    }
+    const nodes = [...nodeMap.values()]
     if (nodes.length === 0) {
       return res.status(200).json({ message: 'No nodes configured', results: {} })
     }

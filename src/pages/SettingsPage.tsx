@@ -359,7 +359,7 @@ function NodeConfigCard({
   )
 }
 
-function TemplateIndexStatus() {
+function TemplateIndexStatus({ nodes }: { nodes: NodeConfig[] }) {
   const cronMeta = useCronMeta()
   const queryClient = useQueryClient()
   const [refreshing, setRefreshing] = useState(false)
@@ -372,7 +372,7 @@ function TemplateIndexStatus() {
     setRefreshError(null)
     setCooldownSec(0)
     try {
-      await triggerIndexRefresh(forceMode)
+      await triggerIndexRefresh(forceMode, nodes)
       queryClient.invalidateQueries({ queryKey: ['cron-meta'] })
       queryClient.invalidateQueries({ queryKey: ['template-index'] })
       queryClient.invalidateQueries({ queryKey: ['discover-templates'] })
@@ -545,7 +545,7 @@ export function SettingsPage() {
       </Card>
 
       {/* Template Index (Vercel only) */}
-      {isVercel && <TemplateIndexStatus />}
+      {isVercel && <TemplateIndexStatus nodes={nodes} />}
 
       <Separator />
 

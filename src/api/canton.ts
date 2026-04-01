@@ -63,9 +63,24 @@ export async function fetchCronMeta(): Promise<CronMeta | null> {
   return res.data.meta ?? null
 }
 
-/** Manually trigger template index refresh. Pass force=true to skip cooldown. */
-export async function triggerIndexRefresh(force?: boolean): Promise<Record<string, unknown>> {
-  const res = await axios.post('/api/cron/index-templates', null, {
+/** Manually trigger template index refresh. Pass force=true to skip cooldown.
+ *  Sends the current node list so the server can index dynamically-added nodes too. */
+export async function triggerIndexRefresh(force?: boolean, nodes?: NodeConfig[]): Promise<Record<string, unknown>> {
+  // Send non-secret node config — the server uses this to know which nodes to index.
+  // Credentials are looked up server-side from CANTON_NODES_AUTH or Redis.
+  const nodeConfigs = nodes?.map((n) => ({
+    id: n.id,
+    name: n.name,
+    network: n.network,
+    jsonApiUrl: n.jsonApiUrl,
+    jsonApiPort: n.jsonApiPort,
+    validatorApiUrl: n.validatorApiUrl,
+    validatorApiPort: n.validatorApiPort,
+    authMode: n.auth.mode,
+    audience: n.auth.mode === 'oauth2' ? n.auth.audience : undefined,
+    validatorAudience: n.auth.mode === 'oauth2' ? n.auth.validatorAudience : undefined,
+  }))
+  const res = await axios.post('/api/cron/index-templates', nodeConfigs ? { nodes: nodeConfigs } : null, {
     params: force ? { force: 'true' } : undefined,
   })
   return res.data
