@@ -219,7 +219,7 @@ export function useTemplateIndex() {
   const node = useNodeConfig()
   const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
   return useQuery({
-    queryKey: ['template-index', node.id],
+    queryKey: ['template-index', node.network || node.id],
     queryFn: () => api.fetchTemplateIndex(node.network || node.id),
     staleTime: 60000,
     enabled: isVercel,

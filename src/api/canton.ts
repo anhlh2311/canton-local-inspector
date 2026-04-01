@@ -406,7 +406,18 @@ async function discoverTemplateIds(
   // Strategy 0: Pre-built index from cron job (Vercel only, fastest path)
   if (isVercel) {
     try {
-      const index = await fetchTemplateIndex(node.network || node.id)
+      // Try network key first, then node ID as fallback
+      const networkKey = node.network || node.id
+      let index = await fetchTemplateIndex(networkKey)
+      // If no index found and network isn't set, try inferring from node name
+      if ((!index.updatedAt || index.templates.length === 0) && !node.network) {
+        const nameLower = node.name.toLowerCase()
+        const inferred = ['mainnet', 'testnet', 'devnet'].find((n) => nameLower.includes(n))
+        if (inferred) {
+          const inferredIndex = await fetchTemplateIndex(inferred)
+          if (inferredIndex.updatedAt && inferredIndex.templates.length > 0) index = inferredIndex
+        }
+      }
       if (index.updatedAt && index.templates.length > 0) {
         const networkKey = getNetworkKey(node)
         nodeNetworkMap[node.id] = networkKey
