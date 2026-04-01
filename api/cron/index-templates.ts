@@ -205,9 +205,10 @@ function parseTemplateId(templateId: string, packageName: string = ''): Template
 
 // ---- Per-node indexing logic ----
 
+/** Stream ALL active contracts via WebSocket — no 200-element limit.
+ *  Falls back to HTTP API if WebSocket fails. */
 async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[]> {
   const jsonBase = buildFullUrl(node.jsonApiUrl, node.jsonApiPort)
-  const valBase = node.validatorApiUrl ? buildFullUrl(node.validatorApiUrl, node.validatorApiPort) : null
   const templates = new Map<string, TemplateEntry>()
 
   const jsonToken = await getJsonApiToken(node, redis)
@@ -218,37 +219,22 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
   if (!ledgerEndRes.ok) throw new Error(`Ledger end failed: ${ledgerEndRes.status}`)
   const { offset } = await ledgerEndRes.json()
 
-  // Strategy 1: Scan proxy (no 200 limit, core Splice templates)
-  if (valBase) {
-    try {
-      const valToken = await getValidatorToken(node, redis)
-      const valHeaders = { 'Authorization': `Bearer ${valToken}`, 'Content-Type': 'application/json' }
-
-      const [amuletRes, roundsRes] = await Promise.allSettled([
-        fetch(`${valBase}/api/validator/v0/scan-proxy/amulet-rules`, { headers: valHeaders }),
-        fetch(`${valBase}/api/validator/v0/scan-proxy/open-and-issuing-mining-rounds`, { headers: valHeaders }),
-      ])
-
-      if (amuletRes.status === 'fulfilled' && amuletRes.value.ok) {
-        const data = await amuletRes.value.json()
-        const tid = data?.amulet_rules?.contract?.template_id
-        if (tid) { const e = parseTemplateId(tid, 'splice-amulet'); if (e) templates.set(tid, e) }
+  // Primary strategy: WebSocket streaming (no 200-element limit)
+  try {
+    const wsContracts = await streamActiveContracts(jsonBase, jsonToken, offset)
+    for (const c of wsContracts) {
+      const evt = c?.contractEntry?.JsActiveContract?.createdEvent
+      if (evt?.templateId) {
+        const e = parseTemplateId(evt.templateId, evt.packageName ?? '')
+        if (e) templates.set(e.templateId, e)
       }
-      if (roundsRes.status === 'fulfilled' && roundsRes.value.ok) {
-        const data = await roundsRes.value.json()
-        for (const key of Object.keys(data ?? {})) {
-          if (Array.isArray(data[key])) {
-            for (const r of data[key]) {
-              const tid = r?.contract?.template_id
-              if (tid) { const e = parseTemplateId(tid, 'splice-amulet'); if (e) templates.set(tid, e) }
-            }
-          }
-        }
-      }
-    } catch { /* Scan proxy not available */ }
+    }
+    if (templates.size > 0) return [...templates.values()]
+  } catch (err) {
+    console.warn(`[index-templates] WebSocket failed for ${node.id}: ${err instanceof Error ? err.message : err}`)
   }
 
-  // Strategy 2: filtersForAnyParty wildcard
+  // Fallback: HTTP filtersForAnyParty wildcard (limited to 200)
   const wildcardFilter = { identifierFilter: { WildcardFilter: { value: { includeCreatedEventBlob: false } } } }
   try {
     const res = await fetch(`${jsonBase}/v2/state/active-contracts`, {
@@ -271,60 +257,64 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
           }
         }
       }
-      if (templates.size > 0) return [...templates.values()]
     }
-  } catch { /* Hit 200 limit or other error */ }
-
-  // Strategy 3: Per-user-party wildcards (try up to 10 parties)
-  try {
-    const usersRes = await fetch(`${jsonBase}/v2/users?pageSize=20`, { headers: jsonHeaders })
-    if (usersRes.ok) {
-      const usersData = await usersRes.json()
-      const parties = new Set<string>()
-      for (const entry of usersData.users ?? []) {
-        const u = entry?.user ?? entry
-        const party = u?.primaryParty
-        if (party) parties.add(party)
-      }
-
-      // Query in parallel batches of 5
-      const partyList = [...parties].slice(0, 10)
-      const BATCH = 5
-      for (let i = 0; i < partyList.length; i += BATCH) {
-        const batch = partyList.slice(i, i + BATCH)
-        const results = await Promise.allSettled(
-          batch.map((party) =>
-            fetch(`${jsonBase}/v2/state/active-contracts`, {
-              method: 'POST',
-              headers: jsonHeaders,
-              body: JSON.stringify({
-                filter: { filtersByParty: { [party]: { cumulative: [wildcardFilter] } } },
-                verbose: false,
-                activeAtOffset: offset,
-              }),
-            }).then(async (r) => {
-              if (!r.ok) throw new Error(`${r.status}`)
-              return r.json()
-            })
-          )
-        )
-        for (const result of results) {
-          if (result.status === 'fulfilled' && Array.isArray(result.value)) {
-            for (const c of result.value) {
-              const evt = c?.contractEntry?.JsActiveContract?.createdEvent
-              if (evt?.templateId) {
-                const e = parseTemplateId(evt.templateId, evt.packageName ?? '')
-                if (e) templates.set(e.templateId, e)
-              }
-            }
-          }
-        }
-        if (templates.size > 0) break // Stop after first successful batch
-      }
-    }
-  } catch { /* continue */ }
+  } catch { /* continue with whatever we have */ }
 
   return [...templates.values()]
+}
+
+/** Connect to Canton JSON API WebSocket and stream all active contracts.
+ *  Returns when the stream completes (connection closes). Timeout after 45s. */
+function streamActiveContracts(
+  jsonBase: string,
+  token: string,
+  offset: string | number,
+): Promise<Record<string, unknown>[]> {
+  // Dynamic import to avoid bundling ws in the client
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const WebSocket = require('ws')
+
+  return new Promise((resolve, reject) => {
+    const wsUrl = jsonBase.replace(/^http/, 'ws') + '/v2/state/active-contracts'
+    const ws = new WebSocket(wsUrl, [`jwt.token.${token}`, 'daml.ws.auth'])
+    const contracts: Record<string, unknown>[] = []
+    const TIMEOUT_MS = 45000 // 45s — leave 15s buffer for the 60s Vercel limit
+    const timer = setTimeout(() => {
+      ws.close()
+      resolve(contracts) // Return whatever we got before timeout
+    }, TIMEOUT_MS)
+
+    ws.on('open', () => {
+      ws.send(JSON.stringify({
+        filter: {
+          filtersForAnyParty: {
+            cumulative: [{
+              identifierFilter: { WildcardFilter: { value: { includeCreatedEventBlob: false } } }
+            }]
+          }
+        },
+        verbose: false,
+        activeAtOffset: offset,
+      }))
+    })
+
+    ws.on('message', (data: Buffer) => {
+      try {
+        contracts.push(JSON.parse(data.toString()))
+      } catch { /* skip malformed messages */ }
+    })
+
+    ws.on('close', () => {
+      clearTimeout(timer)
+      resolve(contracts)
+    })
+
+    ws.on('error', (err: Error) => {
+      clearTimeout(timer)
+      if (contracts.length > 0) resolve(contracts) // Return partial results
+      else reject(err)
+    })
+  })
 }
 
 // ---- Handler ----
