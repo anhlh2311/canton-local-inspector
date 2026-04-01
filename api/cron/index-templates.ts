@@ -219,6 +219,8 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
   if (!ledgerEndRes.ok) throw new Error(`Ledger end failed: ${ledgerEndRes.status}`)
   const { offset } = await ledgerEndRes.json()
 
+  const errors: string[] = []
+
   // Primary strategy: WebSocket streaming (no 200-element limit)
   try {
     const wsContracts = await streamActiveContracts(jsonBase, jsonToken, offset)
@@ -230,11 +232,12 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
       }
     }
     if (templates.size > 0) return [...templates.values()]
+    errors.push(`WebSocket returned ${wsContracts.length} contracts, 0 templates`)
   } catch (err) {
-    console.warn(`[index-templates] WebSocket failed for ${node.id}: ${err instanceof Error ? err.message : err}`)
+    errors.push(`WebSocket: ${err instanceof Error ? err.message : String(err)}`)
   }
 
-  // Fallback: HTTP filtersForAnyParty wildcard (limited to 200)
+  // Fallback 1: HTTP filtersForAnyParty wildcard (limited to 200)
   const wildcardFilter = { identifierFilter: { WildcardFilter: { value: { includeCreatedEventBlob: false } } } }
   try {
     const res = await fetch(`${jsonBase}/v2/state/active-contracts`, {
@@ -257,9 +260,57 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
           }
         }
       }
+      if (templates.size > 0) return [...templates.values()]
+      errors.push(`HTTP wildcard: ${res.status} ok but 0 templates`)
+    } else {
+      errors.push(`HTTP wildcard: ${res.status}`)
     }
-  } catch { /* continue with whatever we have */ }
+  } catch (err) {
+    errors.push(`HTTP wildcard: ${err instanceof Error ? err.message : String(err)}`)
+  }
 
+  // Fallback 2: Per-user-party wildcards
+  try {
+    const usersRes = await fetch(`${jsonBase}/v2/users?pageSize=20`, { headers: jsonHeaders })
+    if (usersRes.ok) {
+      const usersData = await usersRes.json()
+      const parties = new Set<string>()
+      for (const entry of usersData.users ?? []) {
+        const u = entry?.user ?? entry
+        if (u?.primaryParty) parties.add(u.primaryParty)
+      }
+      for (const party of [...parties].slice(0, 5)) {
+        try {
+          const res = await fetch(`${jsonBase}/v2/state/active-contracts`, {
+            method: 'POST',
+            headers: jsonHeaders,
+            body: JSON.stringify({
+              filter: { filtersByParty: { [party]: { cumulative: [wildcardFilter] } } },
+              verbose: false,
+              activeAtOffset: offset,
+            }),
+          })
+          if (res.ok) {
+            const contracts = await res.json()
+            if (Array.isArray(contracts)) {
+              for (const c of contracts) {
+                const evt = c?.contractEntry?.JsActiveContract?.createdEvent
+                if (evt?.templateId) {
+                  const e = parseTemplateId(evt.templateId, evt.packageName ?? '')
+                  if (e) templates.set(e.templateId, e)
+                }
+              }
+            }
+            if (templates.size > 0) break
+          }
+        } catch { /* try next party */ }
+      }
+    }
+  } catch { /* continue */ }
+
+  if (templates.size === 0 && errors.length > 0) {
+    console.warn(`[index-templates] ${node.id}: all strategies failed:`, errors.join('; '))
+  }
   return [...templates.values()]
 }
 
