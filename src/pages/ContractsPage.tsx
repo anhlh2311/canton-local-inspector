@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   FileCode,
   RefreshCw,
@@ -282,13 +283,16 @@ function TemplateQueryResults({
   partyId: string
   templateId: string
 }) {
+  const node = useNodeConfig()
   const ledgerEnd = useLedgerEnd()
   const offset = ledgerEnd.data?.offset
-  const [wsContracts, setWsContracts] = useState<ActiveContract[] | null>(null)
+  const queryClient = useQueryClient()
+  const [localContracts, setLocalContracts] = useState<ActiveContract[] | null>(null)
   const limitError = !!(contracts.error && (contracts.error as { isLimitError?: boolean }).isLimitError)
+  const cachedContracts = queryClient.getQueryData<ActiveContract[]>(['ws-contracts', node.id, templateId])
 
-  // Show LoadAll for limit errors
-  if (limitError && !wsContracts) {
+  // Show LoadAll for limit errors (unless cached)
+  if (limitError && !cachedContracts && !localContracts) {
     return (
       <Card>
         <CardHeader className="pb-3">
@@ -299,7 +303,7 @@ function TemplateQueryResults({
               partyId={partyId}
               templateId={templateId}
               activeAtOffset={offset}
-              onLoaded={(c) => setWsContracts(c)}
+              onLoaded={(c) => setLocalContracts(c)}
             />
           </CardDescription>
         </CardHeader>
@@ -307,7 +311,7 @@ function TemplateQueryResults({
     )
   }
 
-  const data = wsContracts ?? (contracts.data as ActiveContract[] | null)
+  const data = localContracts ?? cachedContracts ?? (contracts.data as ActiveContract[] | null)
   if (!data) return null
 
   return (

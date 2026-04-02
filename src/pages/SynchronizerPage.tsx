@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Globe, Shield, Users, FileCode, Layers, ChevronDown, ChevronUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -29,9 +30,11 @@ interface MergedTemplate {
 }
 
 function DsoContractsPanel({ partyId }: { partyId: string }) {
+  const node = useNodeConfig()
   const discovery = useDiscoverTemplates(partyId)
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [templateSearch, setTemplateSearch] = useState('')
+  const queryClient = useQueryClient()
 
   const [showAllTemplates, setShowAllTemplates] = useState(false)
 
@@ -116,7 +119,9 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
                         <p className="text-sm font-medium truncate">{t.shortName}</p>
                         <p className="text-[10px] text-muted-foreground font-mono truncate">{t.packageName}</p>
                       </div>
-                      <Badge variant="secondary" className="shrink-0 ml-2">~{t.totalCount}</Badge>
+                      {t.totalCount > 0 && (
+                        <Badge variant="secondary" className="shrink-0 ml-2">~{t.totalCount}</Badge>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -132,9 +137,12 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
 
       {/* Selected template detail view */}
       {selected && <SelectedTemplateView
+        key={selected.shortName}
         partyId={partyId}
         selected={selected}
         selectedContracts={selectedContracts}
+        queryClient={queryClient}
+        nodeId={node.id}
       />}
     </div>
   )
@@ -144,23 +152,30 @@ function SelectedTemplateView({
   partyId,
   selected,
   selectedContracts,
+  queryClient,
+  nodeId,
 }: {
   partyId: string
   selected: MergedTemplate
   selectedContracts: { isLoading: boolean; error: unknown; data: unknown }
+  queryClient: ReturnType<typeof useQueryClient>
+  nodeId: string
 }) {
   const ledgerEnd = useLedgerEnd()
   const offset = ledgerEnd.data?.offset
-  const [wsContracts, setWsContracts] = useState<Record<string, unknown>[] | null>(null)
+  const templateId = selected.templateIds[0]
+  const wsCacheKey = ['ws-contracts', nodeId, templateId]
+  const cachedContracts = queryClient.getQueryData<Record<string, unknown>[]>(wsCacheKey) ?? null
   const limitError = !!(selectedContracts.error && (selectedContracts.error as { isLimitError?: boolean }).isLimitError)
+  const [localContracts, setLocalContracts] = useState<Record<string, unknown>[] | null>(null)
   const handleLoaded = useCallback((contracts: unknown[]) => {
-    setWsContracts(contracts as Record<string, unknown>[])
+    setLocalContracts(contracts as Record<string, unknown>[])
   }, [])
 
-  if (selectedContracts.isLoading) return <LoadingSpinner text="Loading contracts..." className="py-4" />
+  if (selectedContracts.isLoading && !cachedContracts) return <LoadingSpinner text="Loading contracts..." className="py-4" />
 
-  // Show LoadAllButton on limit error
-  if (limitError && !wsContracts) {
+  // Show LoadAllButton on limit error (unless we have cached WS results)
+  if (limitError && !cachedContracts && !localContracts) {
     return (
       <Card>
         <CardHeader className="pb-3">
@@ -169,7 +184,7 @@ function SelectedTemplateView({
             200+ active contracts — exceeds HTTP limit
             <LoadAllButton
               partyId={partyId}
-              templateId={selected.templateIds[0]}
+              templateId={templateId}
               activeAtOffset={offset}
               onLoaded={handleLoaded}
             />
@@ -179,9 +194,10 @@ function SelectedTemplateView({
     )
   }
 
-  if (selectedContracts.error && !limitError) return <ErrorDisplay error={selectedContracts.error as Error} />
+  if (selectedContracts.error && !limitError && !cachedContracts) return <ErrorDisplay error={selectedContracts.error as Error} />
 
-  const contracts = wsContracts ?? ((selectedContracts.data ?? []) as unknown as Record<string, unknown>[])
+  // Priority: local (just streamed) > React Query cache > HTTP result
+  const contracts = localContracts ?? cachedContracts ?? ((selectedContracts.data ?? []) as unknown as Record<string, unknown>[])
   if (!contracts.length) return <EmptyState icon={FileCode} title="No contracts" />
 
   return (
