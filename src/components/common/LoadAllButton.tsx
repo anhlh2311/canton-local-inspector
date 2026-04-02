@@ -47,12 +47,15 @@ export function LoadAllButton({ partyId, templateId, activeAtOffset, onLoaded, c
     try {
       const token = await getAuthToken(node)
       const filter = buildTemplateFilter(partyId, templateId, activeAtOffset)
+      console.log('[LoadAll] Node:', node.name, 'Party:', partyId.slice(0, 30), 'Template:', templateId.split(':').pop(), 'Offset:', activeAtOffset)
+      console.log('[LoadAll] Filter:', JSON.stringify(filter).slice(0, 300))
       const { promise, cancel } = streamActiveContractsWs(node, token, filter, (count) => {
         setProgress(count)
       })
       cancelRef.current = cancel
 
       const contracts = await promise
+      console.log('[LoadAll] Stream complete:', contracts.length, 'contracts')
       cooldownMap.set(cooldownKey, Date.now())
       onLoaded(contracts)
 

@@ -239,15 +239,19 @@ export function streamActiveContractsWs(
     return { promise: Promise.reject(err), cancel: () => {} }
   }
 
+  console.log('[WS] Connecting to:', wsUrl)
+  console.log('[WS] Request:', JSON.stringify(request).slice(0, 500))
+
   const ws = new WebSocket(wsUrl, [`jwt.token.${token}`, 'daml.ws.auth'])
   const contracts: ActiveContract[] = []
   let cancelled = false
 
   const TIMEOUT_MS = 120000 // 2 min max
-  const timer = setTimeout(() => { ws.close() }, TIMEOUT_MS)
+  const timer = setTimeout(() => { console.log('[WS] Timeout after 120s, got', contracts.length); ws.close() }, TIMEOUT_MS)
 
   const promise = new Promise<ActiveContract[]>((resolve, reject) => {
     ws.onopen = () => {
+      console.log('[WS] Connected, sending filter...')
       ws.send(JSON.stringify(request))
     }
 
@@ -256,23 +260,29 @@ export function streamActiveContractsWs(
       try {
         const msg = JSON.parse(typeof event.data === 'string' ? event.data : '')
         if (msg.code && msg.cause) {
+          console.error('[WS] Error frame:', msg.code, String(msg.cause).slice(0, 300))
           clearTimeout(timer)
           ws.close()
           reject(new Error(`${msg.code}: ${String(msg.cause).slice(0, 200)}`))
           return
         }
         contracts.push(msg as ActiveContract)
+        if (contracts.length === 1) console.log('[WS] First contract received')
         if (onProgress && contracts.length % 500 === 0) onProgress(contracts.length)
-      } catch { /* skip */ }
+      } catch (e) {
+        console.warn('[WS] Parse error:', e, 'data:', String(event.data).slice(0, 200))
+      }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       clearTimeout(timer)
+      console.log('[WS] Closed. Code:', event.code, 'Reason:', event.reason, 'Contracts:', contracts.length)
       if (onProgress) onProgress(contracts.length)
       resolve(contracts)
     }
 
-    ws.onerror = () => {
+    ws.onerror = (event) => {
+      console.error('[WS] Connection error:', event)
       clearTimeout(timer)
       if (contracts.length > 0) resolve(contracts)
       else reject(new Error('WebSocket connection failed'))
