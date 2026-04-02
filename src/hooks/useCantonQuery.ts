@@ -161,16 +161,40 @@ export function useActiveContracts(request: ActiveContractsRequest | null, key?:
   })
 }
 
-// Discover all active contracts for a party, then group by template
-// Uses paginated discovery to handle nodes with >200 contracts
+// Discover templates for a party.
+// On Vercel: uses the cached template index (no API calls).
+// On local dev: falls back to live discovery via discoverAllContracts.
 export function useDiscoverTemplates(partyId: string | undefined) {
   const node = useNodeConfig()
+  const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
   return useQuery({
     queryKey: ['discover-templates', node.id, partyId],
     queryFn: async () => {
+      // On Vercel: use the cached template index — zero active-contracts queries
+      if (isVercel) {
+        const networkKey = node.network || node.id
+        let index = await api.fetchTemplateIndex(networkKey)
+        // Fallback: infer network from node name
+        if ((!index.updatedAt || index.templates.length === 0) && !node.network) {
+          const nameLower = node.name.toLowerCase()
+          const inferred = ['mainnet', 'testnet', 'devnet'].find((n) => nameLower.includes(n))
+          if (inferred) {
+            const inferredIndex = await api.fetchTemplateIndex(inferred)
+            if (inferredIndex.updatedAt && inferredIndex.templates.length > 0) index = inferredIndex
+          }
+        }
+        if (index.templates.length > 0) {
+          return index.templates.map((t) => ({
+            templateId: t.templateId,
+            packageName: t.packageName,
+            count: 0, // No count from index — counts come from live queries when user clicks
+          }))
+        }
+      }
+
+      // Local dev fallback: live discovery
       const token = await getToken(node)
       const contracts = await api.discoverAllContracts(node, token, partyId!)
-      // Group contracts by templateId
       const templateMap: Record<string, { templateId: string; packageName: string; count: number }> = {}
       for (const c of contracts as ActiveContract[]) {
         const evt = c?.contractEntry?.JsActiveContract?.createdEvent
