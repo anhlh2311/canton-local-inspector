@@ -87,7 +87,9 @@ export function LoadAllButton({ partyId, templateId, activeAtOffset, onLoaded, c
   if (error) {
     return (
       <div className="flex items-center gap-1">
-        <Badge variant="destructive" className="text-[10px]">Stream failed</Badge>
+        <Badge variant="destructive" className="text-[10px] max-w-[300px] truncate" title={error}>
+          {error}
+        </Badge>
         <Button
           variant="ghost"
           size="sm"

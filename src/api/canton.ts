@@ -227,7 +227,18 @@ export function streamActiveContractsWs(
   request: ActiveContractsRequest,
   onProgress?: (count: number) => void,
 ): { promise: Promise<ActiveContract[]>; cancel: () => void } {
-  const wsUrl = buildFullUrl(node.jsonApiUrl, node.jsonApiPort).replace(/^http/, 'ws') + '/v2/state/active-contracts'
+  const fullUrl = buildFullUrl(node.jsonApiUrl, node.jsonApiPort)
+  const wsUrl = fullUrl.replace(/^http/, 'ws') + '/v2/state/active-contracts'
+
+  // Detect mixed content: HTTPS page cannot connect to ws:// (non-TLS)
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && wsUrl.startsWith('ws://')) {
+    const err = new Error(
+      `Cannot stream from ${node.name}: mixed content blocked (HTTPS page → WS connection). ` +
+      `The Canton node at ${fullUrl} does not support HTTPS/WSS.`
+    )
+    return { promise: Promise.reject(err), cancel: () => {} }
+  }
+
   const ws = new WebSocket(wsUrl, [`jwt.token.${token}`, 'daml.ws.auth'])
   const contracts: ActiveContract[] = []
   let cancelled = false
