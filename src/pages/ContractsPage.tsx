@@ -283,7 +283,8 @@ function TemplateQueryResults({
         <CardTitle className="text-sm">Results</CardTitle>
         <CardDescription>{data.length.toLocaleString()} active contract(s)</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent>
+        <div className="space-y-2 max-h-[80vh] overflow-y-auto">
         {data.length > 0 ? (
           data.map((c, i) => (
             <ContractCard key={i} contract={c} defaultExpanded={data.length === 1} />
@@ -291,6 +292,7 @@ function TemplateQueryResults({
         ) : (
           <EmptyState icon={FileCode} title="No contracts found" description="No active contracts match this query" />
         )}
+        </div>
       </CardContent>
     </Card>
   )

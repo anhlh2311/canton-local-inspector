@@ -195,7 +195,7 @@ function SelectedTemplateView({
         </CardDescription>
       </CardHeader>
             <CardContent>
-              <div className="space-y-3">
+              <div className="space-y-3 max-h-[80vh] overflow-y-auto">
                 {contracts.map((contract: Record<string, unknown>, i: number) => {
                   const evt = ((contract?.contractEntry as Record<string, unknown>)?.JsActiveContract as Record<string, unknown>)?.createdEvent as Record<string, unknown> | undefined
                   if (!evt) return null
