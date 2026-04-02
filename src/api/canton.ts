@@ -856,6 +856,24 @@ export async function generateSharedSecretToken(): Promise<string> {
 
 // ---- Helper: Build active contracts filter ----
 
+export function buildAnyPartyTemplateFilter(templateId: string, activeAtOffset?: string): ActiveContractsRequest {
+  return {
+    filter: {
+      filtersForAnyParty: {
+        cumulative: [{
+          identifierFilter: {
+            TemplateFilter: {
+              value: { templateId, includeCreatedEventBlob: false }
+            }
+          }
+        }]
+      }
+    },
+    verbose: true,
+    ...(activeAtOffset ? { activeAtOffset } : {}),
+  }
+}
+
 export function buildTemplateFilter(partyId: string, templateId: string, activeAtOffset?: string): ActiveContractsRequest {
   return {
     filter: {

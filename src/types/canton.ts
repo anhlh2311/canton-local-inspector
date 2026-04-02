@@ -130,16 +130,19 @@ export interface InterfaceFilter {
   includeInterfaceView?: boolean
 }
 
+interface CumulativeFilter {
+  cumulative: {
+    identifierFilter: {
+      TemplateFilter?: { value: TemplateFilter }
+      InterfaceFilter?: { value: InterfaceFilter }
+      WildcardFilter?: { value: { includeCreatedEventBlob: boolean } }
+    }
+  }[]
+}
+
 export interface ActiveContractsFilter {
-  filtersByParty: Record<string, {
-    cumulative: {
-      identifierFilter: {
-        TemplateFilter?: { value: TemplateFilter }
-        InterfaceFilter?: { value: InterfaceFilter }
-        WildcardFilter?: { value: { includeCreatedEventBlob: boolean } }
-      }
-    }[]
-  }>
+  filtersByParty?: Record<string, CumulativeFilter>
+  filtersForAnyParty?: CumulativeFilter
 }
 
 export interface ActiveContractsRequest {

@@ -18,9 +18,8 @@ import { CopyButton } from '@/components/common/CopyButton'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { ErrorDisplay } from '@/components/common/ErrorDisplay'
 import { EmptyState } from '@/components/common/EmptyState'
-import { usePackages, useNodeConfig, useTemplateIndex, useActiveContracts, useFlatUsers, useLedgerEnd } from '@/hooks/useCantonQuery'
-import { buildTemplateFilter } from '@/api/canton'
-import { LoadAllButton } from '@/components/common/LoadAllButton'
+import { usePackages, useNodeConfig, useTemplateIndex, useActiveContracts, useLedgerEnd } from '@/hooks/useCantonQuery'
+import { buildAnyPartyTemplateFilter } from '@/api/canton'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { autoQueryContractsAtom } from '@/stores/nodeStore'
 import type { TemplateIndexEntry } from '@/api/canton'
@@ -37,13 +36,11 @@ function PackageCard({
   info,
   expanded,
   onToggle,
-  partyId,
 }: {
   packageId: string
   info: PackageTemplateInfo | undefined
   expanded: boolean
   onToggle: () => void
-  partyId: string | undefined
 }) {
   const autoQuery = useAtomValue(autoQueryContractsAtom)
   // Fetch ledger-end ONCE for all template rows in this card
@@ -129,7 +126,6 @@ function PackageCard({
                         <TemplateRow
                           key={t.templateId}
                           template={t}
-                          partyId={partyId}
                           autoQuery={autoQuery}
                           expanded={expanded}
                           offset={offset}
@@ -153,26 +149,24 @@ function PackageCard({
   )
 }
 
-/** Individual template row — optionally queries active contract count when visible */
+/** Individual template row — optionally queries active contract count when visible.
+ *  Uses filtersForAnyParty to count contracts across ALL parties on the node. */
 function TemplateRow({
   template,
-  partyId,
   autoQuery,
   expanded,
   offset,
 }: {
   template: TemplateIndexEntry
-  partyId: string | undefined
   autoQuery: boolean
   expanded: boolean
   offset: string | undefined
 }) {
-  const shouldQuery = autoQuery && expanded && !!partyId && !!offset
-  const filter = shouldQuery ? buildTemplateFilter(partyId!, template.templateId, offset) : null
+  const shouldQuery = autoQuery && expanded && !!offset
+  const filter = shouldQuery ? buildAnyPartyTemplateFilter(template.templateId, offset) : null
   const contracts = useActiveContracts(filter, `pkg-${template.templateId}`)
   const count = contracts.data ? (contracts.data as ActiveContract[]).length : null
   const limitError = !!(contracts.error && (contracts.error as { isLimitError?: boolean }).isLimitError)
-  const [wsCount, setWsCount] = useState<number | null>(null)
 
   return (
     <div className="flex items-center justify-between py-1.5 px-3 rounded-md bg-muted/50 group">
@@ -191,22 +185,8 @@ function TemplateRow({
             {count} active
           </Badge>
         )}
-        {wsCount !== null && (
-          <Badge variant="outline" className="text-[10px]">
-            {wsCount.toLocaleString()} active
-          </Badge>
-        )}
-        {limitError && wsCount === null && partyId && (
-          <>
-            <Badge variant="outline" className="text-[10px] text-muted-foreground">200+</Badge>
-            <LoadAllButton
-              partyId={partyId}
-              templateId={template.templateId}
-              activeAtOffset={offset}
-              onLoaded={(c) => setWsCount(c.length)}
-              compact
-            />
-          </>
+        {limitError && (
+          <Badge variant="outline" className="text-[10px] text-muted-foreground">200+</Badge>
         )}
         {contracts.isLoading && <LoadingSpinner size={12} />}
         <CopyButton text={template.templateId} className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -246,21 +226,6 @@ export function PackagesPage() {
     }
     return map
   }, [templateIndex.data])
-
-  // Get a party for active contract queries — only fetch users when auto-query is on
-  const autoQuery = useAtomValue(autoQueryContractsAtom)
-  const users = useFlatUsers()
-  const partyId = useMemo(() => {
-    if (!autoQuery) return undefined
-    // Use adminUser if set, otherwise first user's primaryParty
-    if (node.adminUser) return node.adminUser
-    for (const entry of users.users ?? []) {
-      const u = (entry as Record<string, unknown>)?.user as Record<string, unknown> | undefined
-      const party = ((u?.primaryParty ?? (entry as Record<string, unknown>)?.primaryParty) as string)
-      if (party) return party
-    }
-    return undefined
-  }, [autoQuery, node.adminUser, users.users])
 
   // Merge: all package IDs + indexed info, sorted (named first, then unnamed)
   const mergedPackages = useMemo(() => {
@@ -374,7 +339,6 @@ export function PackagesPage() {
             info={pkg.info}
             expanded={expandedPkg === pkg.id}
             onToggle={() => setExpandedPkg(expandedPkg === pkg.id ? null : pkg.id)}
-            partyId={partyId}
           />
         ))}
 
