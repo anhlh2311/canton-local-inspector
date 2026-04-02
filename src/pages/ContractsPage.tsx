@@ -75,11 +75,18 @@ function useTemplateOptions(partyId: string | undefined) {
   const discovery = useDiscoverTemplates(partyId)
   const options: AutocompleteOption[] = useMemo(
     () =>
-      (discovery.data ?? []).map((t) => ({
-        value: t.templateId,
-        label: `${t.templateId.split(':').pop()} (~${t.count})`,
-        sublabel: t.packageName || t.templateId.split(':')[0],
-      })),
+      (discovery.data ?? []).map((t) => {
+        const parts = t.templateId.split(':')
+        const pkgId = parts[0] || ''
+        const moduleEntity = parts.slice(1).join(':')
+        const pkgShort = pkgId.length > 20 ? `${pkgId.slice(0, 10)}...${pkgId.slice(-10)}` : pkgId
+        const pkgLabel = t.packageName ? `${pkgShort}(${t.packageName})` : pkgShort
+        return {
+          value: t.templateId,
+          label: `${pkgLabel}:${moduleEntity}`,
+          sublabel: t.templateId,
+        }
+      }),
     [discovery.data]
   )
   return { options, isLoading: discovery.isLoading }
