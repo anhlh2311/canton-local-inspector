@@ -7,6 +7,8 @@ export interface AutocompleteOption {
   value: string
   label: string
   sublabel?: string
+  /** Group key — options with the same group are shown under a shared header */
+  group?: string
 }
 
 interface AutocompleteInputProps {
@@ -159,26 +161,38 @@ export function AutocompleteInput({
           {loading && (
             <div className="px-3 py-2 text-xs text-muted-foreground">Loading...</div>
           )}
-          {filtered.map((opt, i) => (
-            <button
-              key={opt.value}
-              data-option
-              role="option"
-              aria-selected={i === highlightIndex}
-              className={cn(
-                "w-full text-left px-3 py-2 transition-colors border-b border-border/30 last:border-0",
-                i === highlightIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
-              )}
-              onMouseDown={(e) => e.preventDefault()}
-              onMouseEnter={() => setHighlightIndex(i)}
-              onClick={() => handleSelect(opt)}
-            >
-              <p className="text-sm font-medium truncate">{opt.label}</p>
-              {opt.sublabel && (
-                <p className="text-[10px] text-muted-foreground font-mono truncate">{opt.sublabel}</p>
-              )}
-            </button>
-          ))}
+          {filtered.map((opt, i) => {
+            // Render group header if this is the first item in a new group
+            const prevGroup = i > 0 ? filtered[i - 1].group : undefined
+            const showGroupHeader = opt.group && opt.group !== prevGroup
+            return (
+              <div key={opt.value}>
+                {showGroupHeader && (
+                  <div className="px-3 py-1.5 text-[10px] font-mono text-muted-foreground bg-muted/50 border-b border-border/30 sticky top-0 truncate">
+                    {opt.group}
+                  </div>
+                )}
+                <button
+                  data-option
+                  role="option"
+                  aria-selected={i === highlightIndex}
+                  className={cn(
+                    "w-full text-left py-1.5 transition-colors border-b border-border/30 last:border-0",
+                    opt.group ? "px-3 pl-5" : "px-3",
+                    i === highlightIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
+                  )}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setHighlightIndex(i)}
+                  onClick={() => handleSelect(opt)}
+                >
+                  <p className="text-sm font-medium truncate">{opt.label}</p>
+                  {opt.sublabel && (
+                    <p className="text-[10px] text-muted-foreground font-mono truncate">{opt.sublabel}</p>
+                  )}
+                </button>
+              </div>
+            )
+          })}
           {!loading && filtered.length === 0 && value && (
             <div className="px-3 py-2 text-xs text-muted-foreground">No matches</div>
           )}

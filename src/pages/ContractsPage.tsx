@@ -75,18 +75,44 @@ function useTemplateOptions(partyId: string | undefined) {
   const discovery = useDiscoverTemplates(partyId)
   const options: AutocompleteOption[] = useMemo(
     () =>
-      (discovery.data ?? []).map((t) => {
-        const parts = t.templateId.split(':')
-        const pkgId = parts[0] || ''
-        const moduleEntity = parts.slice(1).join(':')
-        const pkgShort = pkgId.length > 20 ? `${pkgId.slice(0, 10)}...${pkgId.slice(-10)}` : pkgId
-        const pkgLabel = t.packageName ? `${pkgShort}(${t.packageName})` : pkgShort
-        return {
-          value: t.templateId,
-          label: `${pkgLabel}:${moduleEntity}`,
-          sublabel: t.templateId,
+      (() => {
+        const raw = discovery.data ?? []
+        // Group by packageId, sort groups by packageName, sort templates within group by entity
+        const byPkg: Record<string, typeof raw> = {}
+        for (const t of raw) {
+          const pkgId = t.templateId.split(':')[0] || ''
+          if (!byPkg[pkgId]) byPkg[pkgId] = []
+          byPkg[pkgId].push(t)
         }
-      }),
+        const result: AutocompleteOption[] = []
+        const sortedPkgs = Object.entries(byPkg).sort((a, b) => {
+          const nameA = a[1][0]?.packageName || a[0]
+          const nameB = b[1][0]?.packageName || b[0]
+          return nameA.localeCompare(nameB)
+        })
+        for (const [pkgId, templates] of sortedPkgs) {
+          const pkgName = templates[0]?.packageName || ''
+          const pkgShort = pkgId.length > 20 ? `${pkgId.slice(0, 10)}...${pkgId.slice(-10)}` : pkgId
+          const groupLabel = pkgName ? `${pkgShort}(${pkgName})` : pkgShort
+          const sorted = [...templates].sort((a, b) => {
+            const eA = a.templateId.split(':').pop() || ''
+            const eB = b.templateId.split(':').pop() || ''
+            return eA.localeCompare(eB)
+          })
+          for (const t of sorted) {
+            const parts = t.templateId.split(':')
+            const entity = parts.pop() || ''
+            const module = parts.slice(1).join(':')
+            result.push({
+              value: t.templateId,
+              label: entity,
+              sublabel: module,
+              group: groupLabel,
+            })
+          }
+        }
+        return result
+      })(),
     [discovery.data]
   )
   return { options, isLoading: discovery.isLoading }
