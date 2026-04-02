@@ -205,24 +205,85 @@ export async function getActiveContracts(node: NodeConfig, token: string, reques
     const res = await client.post('/v2/state/active-contracts', requestWithOffset)
     return res.data
   } catch (err: unknown) {
-    const axiosErr = err as { response?: { status?: number; data?: { code?: string } } }
-    // Canton returns 413 or error code when results exceed the node limit (typically 200)
-    // For wildcard queries that hit this limit, we need to paginate by template
-    if (
-      axiosErr.response?.status === 413 ||
-      axiosErr.response?.data?.code === 'JSON_API_MAXIMUM_LIST_ELEMENTS_NUMBER_REACHED'
-    ) {
-      // Check if this is a wildcard query — if so, we can't paginate it easily
-      // Rethrow with a helpful message
+    if (!isLimitError(err)) throw err
+
+    // 200-limit hit — fall back to WebSocket streaming (no limit)
+    try {
+      return await streamActiveContractsFromBrowser(node, token, requestWithOffset)
+    } catch (wsErr) {
+      // WebSocket also failed — rethrow the original limit error
       const error = new Error(
-        'Too many contracts. The Canton node limits responses to 200 contracts. ' +
-        'Try querying by specific template instead of using wildcard discovery.'
+        'Too many contracts (>200). WebSocket fallback also failed: ' +
+        (wsErr instanceof Error ? wsErr.message : String(wsErr))
       )
       ;(error as Error & { isLimitError: boolean }).isLimitError = true
       throw error
     }
-    throw err
   }
+}
+
+/** Build the direct WebSocket URL for a Canton node (bypasses proxy — no CORS for WebSocket). */
+function getDirectWsUrl(node: NodeConfig): string {
+  const fullUrl = buildFullUrl(node.jsonApiUrl, node.jsonApiPort)
+  return fullUrl.replace(/^http/, 'ws') + '/v2/state/active-contracts'
+}
+
+/** Stream active contracts via browser-native WebSocket. No 200-element limit.
+ *  Used as automatic fallback when the HTTP API returns 413. */
+function streamActiveContractsFromBrowser(
+  node: NodeConfig,
+  token: string,
+  request: ActiveContractsRequest,
+): Promise<ActiveContractsResponse> {
+  return new Promise((resolve, reject) => {
+    const wsUrl = getDirectWsUrl(node)
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(wsUrl, [`jwt.token.${token}`, 'daml.ws.auth'])
+    } catch (err) {
+      return reject(new Error(`WebSocket connection failed: ${err instanceof Error ? err.message : err}`))
+    }
+
+    const contracts: ActiveContract[] = []
+    const TIMEOUT_MS = 60000 // 60s timeout for client-side streams
+    const timer = setTimeout(() => {
+      ws.close()
+      resolve(contracts as unknown as ActiveContractsResponse)
+    }, TIMEOUT_MS)
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify(request))
+    }
+
+    ws.onmessage = (event) => {
+      try {
+        const data = typeof event.data === 'string' ? event.data : ''
+        const msg = JSON.parse(data)
+        // Check for error frames
+        if (msg.code && msg.cause) {
+          clearTimeout(timer)
+          ws.close()
+          reject(new Error(`WebSocket error: ${msg.code} — ${msg.cause}`))
+          return
+        }
+        contracts.push(msg as ActiveContract)
+      } catch { /* skip malformed messages */ }
+    }
+
+    ws.onclose = () => {
+      clearTimeout(timer)
+      resolve(contracts as unknown as ActiveContractsResponse)
+    }
+
+    ws.onerror = () => {
+      clearTimeout(timer)
+      if (contracts.length > 0) {
+        resolve(contracts as unknown as ActiveContractsResponse)
+      } else {
+        reject(new Error('WebSocket connection error'))
+      }
+    }
+  })
 }
 
 function isLimitError(err: unknown): boolean {
