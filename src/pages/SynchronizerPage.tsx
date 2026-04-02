@@ -15,6 +15,7 @@ import {
   useDsoPartyId,
   useFlatUsers,
   useActiveContracts,
+  useLedgerEnd,
   useNodeConfig,
   useDiscoverTemplates,
 } from '@/hooks/useCantonQuery'
@@ -148,6 +149,8 @@ function SelectedTemplateView({
   selected: MergedTemplate
   selectedContracts: { isLoading: boolean; error: unknown; data: unknown }
 }) {
+  const ledgerEnd = useLedgerEnd()
+  const offset = ledgerEnd.data?.offset
   const [wsContracts, setWsContracts] = useState<Record<string, unknown>[] | null>(null)
   const limitError = !!(selectedContracts.error && (selectedContracts.error as { isLimitError?: boolean }).isLimitError)
   const handleLoaded = useCallback((contracts: unknown[]) => {
@@ -167,6 +170,7 @@ function SelectedTemplateView({
             <LoadAllButton
               partyId={partyId}
               templateId={selected.templateIds[0]}
+              activeAtOffset={offset}
               onLoaded={handleLoaded}
             />
           </CardDescription>

@@ -23,7 +23,7 @@ import { ErrorDisplay } from '@/components/common/ErrorDisplay'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useAtomValue } from 'jotai'
 import { themeAtom } from '@/stores/nodeStore'
-import { useActiveContracts, useFlatUsers, useNodeConfig, useDiscoverTemplates } from '@/hooks/useCantonQuery'
+import { useActiveContracts, useFlatUsers, useLedgerEnd, useNodeConfig, useDiscoverTemplates } from '@/hooks/useCantonQuery'
 import { buildTemplateFilter, buildInterfaceFilter } from '@/api/canton'
 import { cn, truncateId } from '@/lib/utils'
 import type { ActiveContract } from '@/types/canton'
@@ -249,6 +249,8 @@ function TemplateQueryResults({
   partyId: string
   templateId: string
 }) {
+  const ledgerEnd = useLedgerEnd()
+  const offset = ledgerEnd.data?.offset
   const [wsContracts, setWsContracts] = useState<ActiveContract[] | null>(null)
   const limitError = !!(contracts.error && (contracts.error as { isLimitError?: boolean }).isLimitError)
 
@@ -263,6 +265,7 @@ function TemplateQueryResults({
             <LoadAllButton
               partyId={partyId}
               templateId={templateId}
+              activeAtOffset={offset}
               onLoaded={(c) => setWsContracts(c)}
             />
           </CardDescription>
