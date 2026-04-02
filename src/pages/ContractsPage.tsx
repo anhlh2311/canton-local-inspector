@@ -16,6 +16,7 @@ import { ClearableInput } from '@/components/common/ClearableInput'
 import { AutocompleteInput, type AutocompleteOption } from '@/components/common/AutocompleteInput'
 import { IdDisplay } from '@/components/common/IdDisplay'
 import { CopyButton } from '@/components/common/CopyButton'
+import { LoadAllButton } from '@/components/common/LoadAllButton'
 import { JsonViewer } from '@/components/common/JsonViewer'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { ErrorDisplay } from '@/components/common/ErrorDisplay'
@@ -226,25 +227,69 @@ function TemplateQueryTab() {
       </Card>
 
       {contracts.isLoading && <LoadingSpinner text="Querying contracts..." className="py-8" />}
-      {contracts.error && <ErrorDisplay error={contracts.error as Error} />}
-      {contracts.data && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Results</CardTitle>
-            <CardDescription>{(contracts.data as unknown[]).length} active contract(s)</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {(contracts.data as ActiveContract[]).length > 0 ? (
-              (contracts.data as ActiveContract[]).map((c, i) => (
-                <ContractCard key={i} contract={c} defaultExpanded={(contracts.data as ActiveContract[]).length === 1} />
-              ))
-            ) : (
-              <EmptyState icon={FileCode} title="No contracts found" description="No active contracts match this query" />
-            )}
-          </CardContent>
-        </Card>
+      {contracts.error && !(contracts.error as { isLimitError?: boolean }).isLimitError && (
+        <ErrorDisplay error={contracts.error as Error} />
       )}
+      <TemplateQueryResults
+        contracts={contracts}
+        partyId={partyId}
+        templateId={templateId}
+      />
     </div>
+  )
+}
+
+/** Results view with LoadAll support for >200 contracts */
+function TemplateQueryResults({
+  contracts,
+  partyId,
+  templateId,
+}: {
+  contracts: { data: unknown; error: unknown; isLoading: boolean }
+  partyId: string
+  templateId: string
+}) {
+  const [wsContracts, setWsContracts] = useState<ActiveContract[] | null>(null)
+  const limitError = !!(contracts.error && (contracts.error as { isLimitError?: boolean }).isLimitError)
+
+  // Show LoadAll for limit errors
+  if (limitError && !wsContracts) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Results</CardTitle>
+          <CardDescription className="flex items-center gap-2">
+            200+ active contracts — exceeds HTTP limit
+            <LoadAllButton
+              partyId={partyId}
+              templateId={templateId}
+              onLoaded={(c) => setWsContracts(c)}
+            />
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+
+  const data = wsContracts ?? (contracts.data as ActiveContract[] | null)
+  if (!data) return null
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm">Results</CardTitle>
+        <CardDescription>{data.length.toLocaleString()} active contract(s)</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {data.length > 0 ? (
+          data.map((c, i) => (
+            <ContractCard key={i} contract={c} defaultExpanded={data.length === 1} />
+          ))
+        ) : (
+          <EmptyState icon={FileCode} title="No contracts found" description="No active contracts match this query" />
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

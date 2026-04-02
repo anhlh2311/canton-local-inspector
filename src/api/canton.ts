@@ -205,85 +205,76 @@ export async function getActiveContracts(node: NodeConfig, token: string, reques
     const res = await client.post('/v2/state/active-contracts', requestWithOffset)
     return res.data
   } catch (err: unknown) {
-    if (!isLimitError(err)) throw err
-
-    // 200-limit hit — fall back to WebSocket streaming (no limit)
-    try {
-      return await streamActiveContractsFromBrowser(node, token, requestWithOffset)
-    } catch (wsErr) {
-      // WebSocket also failed — rethrow the original limit error
-      const error = new Error(
-        'Too many contracts (>200). WebSocket fallback also failed: ' +
-        (wsErr instanceof Error ? wsErr.message : String(wsErr))
-      )
+    const axiosErr = err as { response?: { status?: number; data?: { code?: string } } }
+    if (
+      axiosErr.response?.status === 413 ||
+      axiosErr.response?.data?.code === 'JSON_API_MAXIMUM_LIST_ELEMENTS_NUMBER_REACHED'
+    ) {
+      const error = new Error('Too many contracts. Use "Load All" to stream via WebSocket.')
       ;(error as Error & { isLimitError: boolean }).isLimitError = true
       throw error
     }
+    throw err
   }
 }
 
-/** Build the direct WebSocket URL for a Canton node (bypasses proxy — no CORS for WebSocket). */
-function getDirectWsUrl(node: NodeConfig): string {
-  const fullUrl = buildFullUrl(node.jsonApiUrl, node.jsonApiPort)
-  return fullUrl.replace(/^http/, 'ws') + '/v2/state/active-contracts'
-}
-
 /** Stream active contracts via browser-native WebSocket. No 200-element limit.
- *  Used as automatic fallback when the HTTP API returns 413. */
-function streamActiveContractsFromBrowser(
+ *  Called explicitly by UI components when user clicks "Load All".
+ *  onProgress callback fires periodically with the current count. */
+export function streamActiveContractsWs(
   node: NodeConfig,
   token: string,
   request: ActiveContractsRequest,
-): Promise<ActiveContractsResponse> {
-  return new Promise((resolve, reject) => {
-    const wsUrl = getDirectWsUrl(node)
-    let ws: WebSocket
-    try {
-      ws = new WebSocket(wsUrl, [`jwt.token.${token}`, 'daml.ws.auth'])
-    } catch (err) {
-      return reject(new Error(`WebSocket connection failed: ${err instanceof Error ? err.message : err}`))
-    }
+  onProgress?: (count: number) => void,
+): { promise: Promise<ActiveContract[]>; cancel: () => void } {
+  const wsUrl = buildFullUrl(node.jsonApiUrl, node.jsonApiPort).replace(/^http/, 'ws') + '/v2/state/active-contracts'
+  const ws = new WebSocket(wsUrl, [`jwt.token.${token}`, 'daml.ws.auth'])
+  const contracts: ActiveContract[] = []
+  let cancelled = false
 
-    const contracts: ActiveContract[] = []
-    const TIMEOUT_MS = 60000 // 60s timeout for client-side streams
-    const timer = setTimeout(() => {
-      ws.close()
-      resolve(contracts as unknown as ActiveContractsResponse)
-    }, TIMEOUT_MS)
+  const TIMEOUT_MS = 120000 // 2 min max
+  const timer = setTimeout(() => { ws.close() }, TIMEOUT_MS)
 
+  const promise = new Promise<ActiveContract[]>((resolve, reject) => {
     ws.onopen = () => {
       ws.send(JSON.stringify(request))
     }
 
     ws.onmessage = (event) => {
+      if (cancelled) return
       try {
-        const data = typeof event.data === 'string' ? event.data : ''
-        const msg = JSON.parse(data)
-        // Check for error frames
+        const msg = JSON.parse(typeof event.data === 'string' ? event.data : '')
         if (msg.code && msg.cause) {
           clearTimeout(timer)
           ws.close()
-          reject(new Error(`WebSocket error: ${msg.code} — ${msg.cause}`))
+          reject(new Error(`${msg.code}: ${String(msg.cause).slice(0, 200)}`))
           return
         }
         contracts.push(msg as ActiveContract)
-      } catch { /* skip malformed messages */ }
+        if (onProgress && contracts.length % 500 === 0) onProgress(contracts.length)
+      } catch { /* skip */ }
     }
 
     ws.onclose = () => {
       clearTimeout(timer)
-      resolve(contracts as unknown as ActiveContractsResponse)
+      if (onProgress) onProgress(contracts.length)
+      resolve(contracts)
     }
 
     ws.onerror = () => {
       clearTimeout(timer)
-      if (contracts.length > 0) {
-        resolve(contracts as unknown as ActiveContractsResponse)
-      } else {
-        reject(new Error('WebSocket connection error'))
-      }
+      if (contracts.length > 0) resolve(contracts)
+      else reject(new Error('WebSocket connection failed'))
     }
   })
+
+  const cancel = () => {
+    cancelled = true
+    clearTimeout(timer)
+    ws.close()
+  }
+
+  return { promise, cancel }
 }
 
 function isLimitError(err: unknown): boolean {

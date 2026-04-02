@@ -20,6 +20,7 @@ import { ErrorDisplay } from '@/components/common/ErrorDisplay'
 import { EmptyState } from '@/components/common/EmptyState'
 import { usePackages, useNodeConfig, useTemplateIndex, useActiveContracts, useFlatUsers, useLedgerEnd } from '@/hooks/useCantonQuery'
 import { buildTemplateFilter } from '@/api/canton'
+import { LoadAllButton } from '@/components/common/LoadAllButton'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { autoQueryContractsAtom } from '@/stores/nodeStore'
 import type { TemplateIndexEntry } from '@/api/canton'
@@ -170,7 +171,8 @@ function TemplateRow({
   const filter = shouldQuery ? buildTemplateFilter(partyId!, template.templateId, offset) : null
   const contracts = useActiveContracts(filter, `pkg-${template.templateId}`)
   const count = contracts.data ? (contracts.data as ActiveContract[]).length : null
-  const isLimitError = !!(contracts.error && (contracts.error as { isLimitError?: boolean }).isLimitError)
+  const limitError = !!(contracts.error && (contracts.error as { isLimitError?: boolean }).isLimitError)
+  const [wsCount, setWsCount] = useState<number | null>(null)
 
   return (
     <div className="flex items-center justify-between py-1.5 px-3 rounded-md bg-muted/50 group">
@@ -189,10 +191,22 @@ function TemplateRow({
             {count} active
           </Badge>
         )}
-        {isLimitError && (
-          <Badge variant="outline" className="text-[10px] text-muted-foreground">
-            200+ active
+        {wsCount !== null && (
+          <Badge variant="outline" className="text-[10px]">
+            {wsCount.toLocaleString()} active
           </Badge>
+        )}
+        {limitError && wsCount === null && partyId && (
+          <>
+            <Badge variant="outline" className="text-[10px] text-muted-foreground">200+</Badge>
+            <LoadAllButton
+              partyId={partyId}
+              templateId={template.templateId}
+              activeAtOffset={offset}
+              onLoaded={(c) => setWsCount(c.length)}
+              compact
+            />
+          </>
         )}
         {contracts.isLoading && <LoadingSpinner size={12} />}
         <CopyButton text={template.templateId} className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity" />

@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Globe, Shield, Users, FileCode, Layers, ChevronDown, ChevronUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { IdDisplay } from '@/components/common/IdDisplay'
+import { LoadAllButton } from '@/components/common/LoadAllButton'
 import { SearchInput } from '@/components/common/SearchInput'
 import { JsonViewer } from '@/components/common/JsonViewer'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
@@ -118,22 +119,66 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
       )}
 
       {/* Selected template detail view */}
-      {selected && (() => {
-        if (selectedContracts.isLoading) return <LoadingSpinner text="Loading contracts..." className="py-4" />
-        if (selectedContracts.error) return <ErrorDisplay error={selectedContracts.error as Error} />
-        const contracts = (selectedContracts.data ?? []) as unknown as Record<string, unknown>[]
-        if (!contracts.length) return <EmptyState icon={FileCode} title="No contracts" />
+      {selected && <SelectedTemplateView
+        partyId={partyId}
+        selected={selected}
+        selectedContracts={selectedContracts}
+      />}
+    </div>
+  )
+}
 
-        return (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-mono">
-                {selected.shortName}
-              </CardTitle>
-              <CardDescription>
-                {contracts.length} active contract(s)
-              </CardDescription>
-            </CardHeader>
+function SelectedTemplateView({
+  partyId,
+  selected,
+  selectedContracts,
+}: {
+  partyId: string
+  selected: MergedTemplate
+  selectedContracts: { isLoading: boolean; error: unknown; data: unknown }
+}) {
+  const [wsContracts, setWsContracts] = useState<Record<string, unknown>[] | null>(null)
+  const limitError = !!(selectedContracts.error && (selectedContracts.error as { isLimitError?: boolean }).isLimitError)
+  const handleLoaded = useCallback((contracts: unknown[]) => {
+    setWsContracts(contracts as Record<string, unknown>[])
+  }, [])
+
+  if (selectedContracts.isLoading) return <LoadingSpinner text="Loading contracts..." className="py-4" />
+
+  // Show LoadAllButton on limit error
+  if (limitError && !wsContracts) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-mono">{selected.shortName}</CardTitle>
+          <CardDescription className="flex items-center gap-2">
+            200+ active contracts — exceeds HTTP limit
+            <LoadAllButton
+              partyId={partyId}
+              templateId={selected.templateIds[0]}
+              onLoaded={handleLoaded}
+            />
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+
+  if (selectedContracts.error && !limitError) return <ErrorDisplay error={selectedContracts.error as Error} />
+
+  const contracts = wsContracts ?? ((selectedContracts.data ?? []) as unknown as Record<string, unknown>[])
+  if (!contracts.length) return <EmptyState icon={FileCode} title="No contracts" />
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-mono">
+          {selected.shortName}
+        </CardTitle>
+        <CardDescription>
+          {contracts.length.toLocaleString()} active contract(s)
+        </CardDescription>
+      </CardHeader>
             <CardContent>
               <div className="space-y-3">
                 {contracts.map((contract: Record<string, unknown>, i: number) => {
@@ -154,9 +199,6 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
               </div>
             </CardContent>
           </Card>
-        )
-      })()}
-    </div>
   )
 }
 
