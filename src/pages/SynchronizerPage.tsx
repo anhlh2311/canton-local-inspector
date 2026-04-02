@@ -32,27 +32,30 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [templateSearch, setTemplateSearch] = useState('')
 
+  const [showAllTemplates, setShowAllTemplates] = useState(false)
+
   // Merge templates with same short name (different package versions)
-  // Use the count from the version with the MOST contracts (latest/active version)
+  // Filter to DSO-relevant packages (splice-*) by default
   const mergedTemplates: MergedTemplate[] = (() => {
     const raw = discovery.data ?? []
     const byName: Record<string, MergedTemplate> = {}
     for (const t of raw) {
+      // Filter: only show splice-* packages by default (core DSO templates)
+      const pkgName = t.packageName || ''
+      if (!showAllTemplates && pkgName && !pkgName.startsWith('splice-')) continue
+
       const shortName = t.templateId.split(':').pop() ?? t.templateId
-      const pkgName = t.packageName || t.templateId.split(':')[0]
       if (!byName[shortName]) {
-        byName[shortName] = { shortName, packageName: pkgName, totalCount: 0, templateIds: [] }
+        byName[shortName] = { shortName, packageName: pkgName || t.templateId.split(':')[0], totalCount: 0, templateIds: [] }
       }
-      // Use max count across versions (not sum) since the query only hits one version at a time
       if (t.count > byName[shortName].totalCount) {
         byName[shortName].totalCount = t.count
-        // Put the version with most contracts first (most likely the active version)
         byName[shortName].templateIds.unshift(t.templateId)
       } else {
         byName[shortName].templateIds.push(t.templateId)
       }
     }
-    return Object.values(byName).sort((a, b) => b.totalCount - a.totalCount)
+    return Object.values(byName).sort((a, b) => a.shortName.localeCompare(b.shortName))
   })()
 
   // When a merged template is selected, query ALL package versions and merge results
@@ -78,8 +81,16 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
             <div className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">
-                {mergedTemplates.length} template(s) discovered with active contracts
+                {mergedTemplates.length} DSO template(s)
               </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-[10px] px-2"
+                onClick={() => setShowAllTemplates(!showAllTemplates)}
+              >
+                {showAllTemplates ? 'Show DSO only' : 'Show all network templates'}
+              </Button>
             </div>
             <SearchInput
               value={templateSearch}
