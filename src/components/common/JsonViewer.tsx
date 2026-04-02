@@ -18,7 +18,7 @@ export function JsonViewer({ data, className }: JsonViewerProps) {
   }
 
   return (
-    <div className={cn("rounded-lg bg-muted/50 p-4 overflow-auto max-h-[600px]", className)}>
+    <div className={cn("rounded-lg bg-muted/50 p-4 overflow-x-auto", className)}>
       <JsonView data={data as object} style={styles} />
     </div>
   )
