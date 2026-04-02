@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { Redis } from '@upstash/redis'
 import { SignJWT } from 'jose'
+import WebSocket from 'ws'
 
 /**
  * Cron job: Index templates for all configured Canton nodes.
@@ -321,10 +322,6 @@ function streamActiveContracts(
   token: string,
   offset: string | number,
 ): Promise<Record<string, unknown>[]> {
-  // Dynamic import to avoid bundling ws in the client
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const WebSocket = require('ws')
-
   return new Promise((resolve, reject) => {
     const wsUrl = jsonBase.replace(/^http/, 'ws') + '/v2/state/active-contracts'
     const ws = new WebSocket(wsUrl, [`jwt.token.${token}`, 'daml.ws.auth'])
