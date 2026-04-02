@@ -129,7 +129,7 @@ The connection closes with code `1000` when all matching contracts have been str
 
 Requires the `ws` package (`npm install ws` or run from a project that has it).
 
-### Step 1: Get an auth token
+### Console: Get an Auth Token
 
 **OAuth2 (remote nodes):**
 
@@ -157,7 +157,7 @@ new SignJWT({sub:'ledger-api-user',aud:'https://canton.network.global',iss:'unsa
 ")
 ```
 
-### Step 2: Get the current ledger offset
+### Console: Get the Ledger Offset
 
 ```bash
 OFFSET=$(curl -s -H "Authorization: Bearer $TOKEN" \
@@ -167,7 +167,7 @@ OFFSET=$(curl -s -H "Authorization: Bearer $TOKEN" \
 echo "Offset: $OFFSET"
 ```
 
-### Step 3: Stream contracts
+### Console: Stream Contracts
 
 **Stream all contracts (wildcard):**
 
@@ -297,7 +297,7 @@ node -e "const W=require('ws'),t=process.argv[1],o=parseInt(process.argv[2]),w=n
 
 ## Postman
 
-### Step 1: Get an auth token
+### Postman: Get an Auth Token
 
 Create a regular HTTP **POST** request:
 
@@ -313,14 +313,14 @@ Create a regular HTTP **POST** request:
 
 Copy the `access_token` from the response.
 
-### Step 2: Get the current ledger offset
+### Postman: Get the Ledger Offset
 
 - **GET** `https://<your-json-api-host>/v2/state/ledger-end`
 - **Headers**: `Authorization: Bearer <your-token>`
 
 Note the `offset` value from the response.
 
-### Step 3: Connect via WebSocket
+### Postman: Connect via WebSocket
 
 1. Click **New** > **WebSocket**
 

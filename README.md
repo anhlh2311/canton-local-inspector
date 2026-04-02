@@ -8,7 +8,7 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 - **Synchronizer & DSO** — Global synchronizer details, DSO party ID, dynamically discovered active contracts with JSON payload viewer, responsive multi-column party grid with expand/collapse
 - **Parties Explorer** — Three tabs: **Users** (local users from `/v2/users`, fast default), **Network Parties** (all parties from `/v2/parties`, paginated 200/page, opt-in for large networks), and **Party Lookup** (check specific party existence by ID). Local/Remote badges, rights, annotations.
 - **Package Manager** — List installed packages with auto-discovered names, templates, and active contract counts per package
-- **Contract Explorer** — Query active contracts by template, interface, or contract ID with autocomplete dropdowns for party and template selection. Auto-queries on selection with refresh button.
+- **Contract Explorer** — Query active contracts by template, interface, or contract ID. Grouped template dropdown by package. "Load All" button streams contracts via WebSocket when HTTP 200 limit is hit. Progress tracking, cancel support, and 5-minute cooldown.
 - **Settings** — Configure local and remote node connections with per-node auth (shared-secret or OAuth2), network selector (local/devnet/testnet/mainnet), auto-refresh intervals, custom colors. Template index status with manual refresh and cooldown protection.
 - **Dark/Light Theme** — Toggle between dark and light modes with instant switching
 
@@ -19,9 +19,11 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 - **Dual auth modes** — Shared-secret (HMAC-SHA256 JWT) for local dev, OAuth2 client credentials for remote/production
 - **Separate validator audience** — OAuth2 nodes can use a different audience for the Validator API vs the JSON API
 - **Auto-discovery** — Templates and package names are discovered from the ledger, not hardcoded
-- **Cron-based template indexing** — Background job pre-builds template index in Upstash Redis per network (devnet/testnet/mainnet), solving the 200-contract discovery limit
-- **Network-aware nodes** — Each node has a network identifier ensuring template indexes don't overlap across devnet/testnet/mainnet
-- **Autocomplete inputs** — Keyboard-navigable dropdowns (Arrow keys + Enter) for party and template selection
+- **Cron-based template indexing** — Daily background job streams all contracts via WebSocket, builds template index in Upstash Redis per network
+- **WebSocket streaming** — "Load All" button on templates with >200 contracts streams via WebSocket (no limit). Progress indicator, cancel button, large stream warning (>5,000 contracts), and React Query cache with 50K contract cap and auto-eviction
+- **Network-aware nodes** — Each node has a network identifier (devnet/testnet/mainnet/local) ensuring template indexes don't overlap
+- **Grouped template dropdown** — Templates grouped by package with truncated package hash headers in the Contract Explorer
+- **Autocomplete inputs** — Keyboard-navigable dropdowns (Arrow keys + Enter) with group headers for party and template selection
 - **Copy-friendly** — Every ID (party, contract, package, template) has a one-click copy button
 - **Auto-refresh** — Configurable polling interval (5s / 15s / 30s / 60s / off)
 - **Secure credential storage** — OAuth2 client secrets for dynamically-added nodes are stored server-side in Upstash Redis, never in the browser
@@ -124,17 +126,17 @@ Canton's JSON API limits active contract responses to 200 elements per request. 
 
 ### Cron-Based Indexing (Vercel)
 
-A daily cron job pre-builds a template index for each configured node and caches it in Upstash Redis:
+A daily cron job streams all active contracts via **WebSocket** (no 200 limit) and caches discovered templates in Upstash Redis:
 
-1. **Scan Proxy** — Queries `amulet-rules` and `open-and-issuing-mining-rounds` endpoints (no 200 limit) to discover core Splice templates
-2. **`filtersForAnyParty` Wildcard** — Single JSON API query covering all visible parties
-3. **Per-User-Party Wildcards** — Fallback for nodes where the wildcard exceeds 200 total contracts
+1. **WebSocket Stream** — Connects to `wss://node/v2/state/active-contracts` with `filtersForAnyParty` wildcard, streams all contracts (48K+ on mainnet), extracts unique template IDs
+2. **HTTP Fallback** — If WebSocket fails, falls back to `filtersForAnyParty` HTTP wildcard, then per-user-party wildcards
 
-The index is namespaced by node ID and tagged with the node's **network** (devnet/testnet/mainnet) to prevent cross-network template mixing.
+The index is namespaced by **network** (`canton:templates:devnet`, `canton:templates:mainnet`) to prevent cross-network template mixing. Multiple nodes on the same network merge their templates.
 
 **Manual refresh**: Click "Refresh Index Now" in Settings. A **5-minute cooldown** prevents abuse — the server returns HTTP 429 if triggered too frequently, protecting Upstash Redis quota.
 
 **Security**:
+
 - Vercel cron (GET): authenticated via `CRON_SECRET` Bearer token
 - Manual trigger (POST): authenticated via same-origin check (browser `Origin` header must match `Host`)
 
@@ -144,13 +146,19 @@ When the cron index is unavailable (local dev, or first deploy before the cron r
 
 1. **Cached Index** — Checks Redis for pre-built template index (Vercel only)
 2. **Scan Proxy** — Core Splice templates via the Validator API
-3. **`filtersForAnyParty` Wildcard** — Single-shot coverage
+3. **`filtersForAnyParty` Wildcard** — Single-shot HTTP coverage
 4. **Per-User-Party Wildcards** — Probes individual parties, stops on first success
-5. **Same-Network Construction** — Uses `packageName` and `Module:Entity` patterns learned from other nodes **on the same network** to construct template IDs (devnet patterns stay in devnet, mainnet in mainnet)
+5. **Same-Network Construction** — Uses `packageName` and `Module:Entity` patterns learned from other nodes **on the same network**
 
-### Contract Querying
+### Contract Querying and WebSocket Fallback
 
-Once templates are discovered, the Contract Explorer queries each template individually per party — per-template counts are typically well under 200.
+Individual contract queries use HTTP first. If a template exceeds the 200 limit (HTTP 413), the UI shows a "Load All" button that streams contracts via WebSocket:
+
+- **Progress indicator** during streaming ("1,240 loaded...")
+- **Cancel button** to abort mid-stream
+- **Large stream warning** for templates with >5,000 expected contracts
+- **React Query cache** persists streamed results across page navigation (50K contract cap with LRU eviction)
+- **5-minute per-template cooldown** after each stream
 
 ## Canton API Endpoints Used
 
@@ -160,7 +168,8 @@ Once templates are discovered, the Contract Explorer queries each template indiv
 |----------|--------|---------|
 | `/v2/version` | GET | Health check, version info |
 | `/v2/state/connected-synchronizers` | GET | List connected synchronizers |
-| `/v2/state/active-contracts` | POST | Query active contracts (template, interface, or wildcard filter) |
+| `/v2/state/active-contracts` | POST | Query active contracts (200-element limit) |
+| `/v2/state/active-contracts` | WebSocket | Stream active contracts (no limit) |
 | `/v2/state/ledger-end` | GET | Current ledger offset |
 | `/v2/users` | GET | List users (auto-paginates, 500/batch) |
 | `/v2/users/{id}/rights` | POST | Grant read permissions |
@@ -192,35 +201,41 @@ The remote and OAuth2 proxies use a custom Vite plugin (`dynamicProxyPlugin`) th
 
 ## Project Structure
 
-```
+```text
 src/
-├── api/canton.ts              # API functions, JWT/OAuth2 auth, proxy routing, template discovery
-├── types/canton.ts            # TypeScript types (NodeConfig, AuthConfig, API responses)
-├── constants/nodes.ts         # Default node configurations from env vars
-├── stores/nodeStore.ts        # Jotai atoms (selected node, health, refresh interval, theme)
-├── hooks/useCantonQuery.ts    # React Query hooks for all API calls
+├── api/canton.ts              # API client, auth, proxy, discovery, WebSocket streaming
+├── types/canton.ts            # TypeScript interfaces
+├── constants/nodes.ts         # Node config from env vars
+├── stores/nodeStore.ts        # Jotai atoms (persisted to localStorage)
+├── hooks/useCantonQuery.ts    # React Query hooks
 ├── components/
-│   ├── ui/                    # shadcn/ui primitives (button, card, tabs, etc.)
-│   ├── common/                # AutocompleteInput, SearchInput, ClearableInput, IdDisplay, JsonViewer, CopyButton
-│   └── layout/                # Sidebar, Header, NodeSelector, MainLayout
+│   ├── ui/                    # shadcn/ui primitives
+│   ├── common/                # LoadAllButton, AutocompleteInput, JsonViewer, CopyButton, etc.
+│   └── layout/                # Sidebar, Header, NodeSelector
 ├── pages/
-│   ├── OverviewPage.tsx       # Network overview with stats and health
-│   ├── SynchronizerPage.tsx   # DSO details, discovered contracts, party grid
-│   ├── PartiesPage.tsx        # User/party browser with search and pagination
-│   ├── PackagesPage.tsx       # Package list with template discovery
-│   ├── ContractsPage.tsx      # Contract query explorer (3 tabs, autocomplete)
-│   └── SettingsPage.tsx       # Node config, auth forms, template index status
+│   ├── OverviewPage.tsx       # Network health and stats
+│   ├── SynchronizerPage.tsx   # DSO contracts and party grid
+│   ├── PartiesPage.tsx        # Users, network parties, party lookup
+│   ├── PackagesPage.tsx       # Packages with template counts
+│   ├── ContractsPage.tsx      # Contract explorer (3 query modes)
+│   └── SettingsPage.tsx       # Node config, auth, template index status
 ├── App.tsx                    # Route definitions
 └── main.tsx                   # Entry point with providers
 
 api/                           # Vercel Serverless Functions (each fully self-contained)
 ├── auth/
-│   ├── token.ts               # OAuth2 client credentials exchange
-│   └── credentials.ts         # CRUD for node OAuth2 credentials in Redis
+│   ├── token.ts               # OAuth2 token exchange
+│   └── credentials.ts         # Dynamic node credential CRUD (Redis)
 ├── cron/
-│   └── index-templates.ts     # Scheduled template indexing job
-├── proxy.ts                   # Canton API proxy with target allowlist
-└── templates.ts               # Serve cached template index from Redis
+│   └── index-templates.ts     # Daily template indexing (WebSocket)
+├── proxy.ts                   # Canton API proxy
+└── templates.ts               # Cached template index reader
+
+docs/                          # Documentation
+├── architecture.md            # System architecture with Mermaid diagrams
+├── data-flows.md              # Sequence diagrams for all data flows
+├── api-reference.md           # Complete API, hooks, and functions reference
+└── websocket-active-contracts.md  # WebSocket usage guide (console + Postman)
 ```
 
 ## Vercel Deployment
@@ -242,6 +257,7 @@ The app supports deployment to Vercel with secure server-side auth, API proxying
 Set these in Vercel project settings:
 
 **Public (bundled in client — safe to expose):**
+
 ```bash
 VITE_DEPLOY_ENV=vercel
 
@@ -251,6 +267,7 @@ VITE_NODES='[{"id":"devnet","name":"Devnet","network":"devnet","jsonApiUrl":"htt
 ```
 
 **Secret (server-side only — never in client bundle):**
+
 ```bash
 # OAuth2 credentials per node (JSON map keyed by node ID)
 CANTON_NODES_AUTH='{"devnet":{"tokenUrl":"https://your-tenant.auth0.com/oauth/token","clientId":"your-id","clientSecret":"your-secret","audience":"https://your-audience","validatorAudience":"https://your-val-audience"}}'
