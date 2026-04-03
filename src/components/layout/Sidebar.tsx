@@ -21,7 +21,7 @@ const navItems = [
   { to: '/parties', icon: Users, label: 'Parties' },
   { to: '/packages', icon: Package, label: 'Packages' },
   { to: '/contracts', icon: FileCode, label: 'Contracts' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
+  { to: '/settings', icon: Settings, label: 'Settings', requireEditor: true },
 ]
 
 const ROLE_COLORS: Record<string, string> = {
@@ -31,7 +31,7 @@ const ROLE_COLORS: Record<string, string> = {
 }
 
 export function Sidebar() {
-  const { user, isAdmin, signOut } = useAuth()
+  const { user, isAdmin, isEditor, signOut } = useAuth()
 
   return (
     <aside className="w-60 border-r border-border bg-card flex flex-col shrink-0">
@@ -48,7 +48,7 @@ export function Sidebar() {
       </div>
       <ScrollArea className="flex-1">
         <nav className="p-2 space-y-1">
-          {navItems.map((item) => (
+          {navItems.filter((item) => !item.requireEditor || isEditor).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

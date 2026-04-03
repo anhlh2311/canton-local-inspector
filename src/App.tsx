@@ -27,6 +27,10 @@ export function App() {
           <Route path="/parties" element={<PartiesPage />} />
           <Route path="/packages" element={<PackagesPage />} />
           <Route path="/contracts" element={<ContractsPage />} />
+        </Route>
+
+        {/* Editor+ routes */}
+        <Route element={<ProtectedRoute requiredRole="editor"><MainLayout /></ProtectedRoute>}>
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
 
