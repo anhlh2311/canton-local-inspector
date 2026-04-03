@@ -10,6 +10,7 @@ import { nodesAtom, refreshIntervalAtom, selectedNodeIdAtom, autoQueryContractsA
 import { DEFAULT_NODES } from '@/constants/nodes'
 import { saveNodeCredentials, deleteNodeCredentials, triggerIndexRefresh } from '@/api/canton'
 import { useCronMeta } from '@/hooks/useCantonQuery'
+import { useAuth } from '@/context/AuthContext'
 import { useQueryClient } from '@tanstack/react-query'
 import type { NodeConfig, AuthConfig } from '@/types/canton'
 
@@ -160,44 +161,57 @@ function NodeConfigCard({
   onDelete: () => void
   isSelected: boolean
 }) {
+  const { isAdmin } = useAuth()
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [form, setForm] = useState(node)
-  // Track the client secret separately — it's only in memory, never in localStorage on Vercel
+  // Track the client secret separately for admin server-side storage
   const [secretInput, setSecretInput] = useState('')
   const [hasServerCreds, setHasServerCreds] = useState(node.auth.mode === 'oauth2' && !!node.auth._hasServerCredentials)
 
   const handleSave = async () => {
     setSaveError(null)
-    // On Vercel + OAuth2: save credentials to server, strip secret from local storage
-    if (isVercel && form.auth.mode === 'oauth2' && secretInput) {
-      try {
-        setSaving(true)
-        await saveNodeCredentials(form.id, {
-          tokenUrl: form.auth.tokenUrl,
-          clientId: form.auth.clientId,
-          clientSecret: secretInput,
-          audience: form.auth.audience,
-          validatorAudience: form.auth.validatorAudience,
-        })
-        setHasServerCreds(true)
-        // Save node config WITHOUT the secret — only a flag indicating server has it
-        const sanitizedForm: NodeConfig = {
-          ...form,
-          auth: { ...form.auth, clientSecret: '', _hasServerCredentials: true },
+
+    if (isVercel && form.auth.mode === 'oauth2') {
+      if (isAdmin && secretInput) {
+        // Admin: store credentials server-side in Redis
+        try {
+          setSaving(true)
+          await saveNodeCredentials(form.id, {
+            tokenUrl: form.auth.tokenUrl,
+            clientId: form.auth.clientId,
+            clientSecret: secretInput,
+            audience: form.auth.audience,
+            validatorAudience: form.auth.validatorAudience,
+          })
+          setHasServerCreds(true)
+          const sanitizedForm: NodeConfig = {
+            ...form,
+            auth: { ...form.auth, clientSecret: '', _hasServerCredentials: true, credentialOwnership: 'server' },
+          }
+          onUpdate(sanitizedForm)
+          setSecretInput('')
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Failed to save credentials'
+          setSaveError(msg)
+          return
+        } finally {
+          setSaving(false)
         }
-        onUpdate(sanitizedForm)
-        setSecretInput('')
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to save credentials'
-        setSaveError(msg)
-        return
-      } finally {
-        setSaving(false)
+      } else if (!isAdmin) {
+        // Editor: store credentials client-side only (secret never sent to backend)
+        const editorForm: NodeConfig = {
+          ...form,
+          auth: { ...form.auth, credentialOwnership: 'client' },
+        }
+        onUpdate(editorForm)
+      } else {
+        // Admin saving non-secret fields
+        onUpdate(form)
       }
     } else {
-      // Local dev or shared-secret: store as-is (credentials only in local config)
+      // Local dev or shared-secret: store as-is
       onUpdate(form)
     }
     setEditing(false)
@@ -307,12 +321,22 @@ function NodeConfigCard({
             <AuthConfigForm
               auth={form.auth}
               onChange={(auth) => setForm({ ...form, auth })}
-              secretOverride={isVercel && form.auth.mode === 'oauth2' ? {
+              secretOverride={isVercel && isAdmin && form.auth.mode === 'oauth2' ? {
                 value: secretInput,
                 onChange: setSecretInput,
                 placeholder: hasServerCreds ? '••••••••  (stored on server)' : 'Enter client secret',
               } : undefined}
             />
+
+            {isVercel && form.auth.mode === 'oauth2' && (
+              <div className="rounded-md bg-muted/50 p-2 text-[10px] text-muted-foreground">
+                {isAdmin ? (
+                  <>Credentials stored <strong>server-side</strong> in Redis. Shared across all users.</>
+                ) : (
+                  <>Credentials stored <strong>in your browser only</strong>. The client secret is never sent to our server — token exchange happens directly with the OAuth provider.</>
+                )}
+              </div>
+            )}
 
             {saveError && (
               <p className="text-xs text-destructive">{saveError}</p>

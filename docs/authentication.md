@@ -169,11 +169,56 @@ canton:invites:list               Set of emails (for listing pending invites)
 3. Add authorized redirect URI: `https://your-domain.com/api/auth/google-callback`
 4. Copy Client ID and Client Secret to Vercel env vars
 
+## Canton Node Credential Ownership
+
+Canton nodes require OAuth2 credentials to query the JSON API. The credential storage model differs by role to balance security and trust:
+
+```mermaid
+flowchart LR
+    subgraph Admin["Admin-Owned Nodes"]
+        A_SECRET["Client Secret"] -->|Stored in| REDIS["Upstash Redis<br/>(server-side)"]
+        REDIS -->|Used by| SERVER_FN["/api/auth/token<br/>(serverless function)"]
+        SERVER_FN -->|Exchanges for| A_TOKEN["Access Token"]
+    end
+
+    subgraph Editor["Editor-Owned Nodes"]
+        E_SECRET["Client Secret"] -->|Stored in| LOCAL["Browser localStorage<br/>(client-side only)"]
+        LOCAL -->|Browser exchanges directly| OAUTH["OAuth Provider<br/>(Keycloak, Auth0)"]
+        OAUTH -->|Returns| E_TOKEN["Access Token"]
+    end
+
+    A_TOKEN -->|Proxied via /api/proxy| CANTON["Canton Node"]
+    E_TOKEN -->|Proxied via /api/proxy| CANTON
+```
+
+| Aspect | Admin nodes | Editor nodes |
+| ------ | ----------- | ------------ |
+| Secret storage | Upstash Redis (server) | Browser localStorage |
+| Token exchange | Server-side (`/api/auth/token`) | Browser-direct to OAuth provider |
+| Secret visibility to backend | Yes (server has it) | No (never sent to backend) |
+| Shared across users | Yes | No (per-browser) |
+| Survives browser clear | Yes | No |
+
+### Why two models?
+
+The Canton OAuth2 client secret is a **master key** — it can authorize any ledger operation including fund transfers. Editors should not need to trust the backend operator with their validator's credentials. By exchanging tokens directly with the OAuth provider from the browser, the client secret never touches our server.
+
+### CORS Fallback
+
+If the OAuth provider blocks browser-direct requests (CORS), the system falls back to proxying the token exchange through the server — with a console warning. Editors should ensure their OAuth provider allows browser CORS (Auth0 and Keycloak both support this).
+
+### Security Recommendation
+
+Editors should create a **separate read-only OAuth client** for the inspector, not reuse their validator's admin credentials. This limits the blast radius if the access token (which does pass through the proxy) is compromised.
+
 ## Security Considerations
 
-- **No client-side secrets**: Google client secret is server-side only
+- **No client-side secrets for Google auth**: Google OAuth client secret is server-side only
+- **Canton secrets separated by role**: Admin secrets in Redis, editor secrets in browser only
 - **HttpOnly cookies**: Session token cannot be stolen via XSS
 - **Role verification**: Every `/api/auth/session` call refreshes the role from Redis, so admin changes (promote/demote/revoke) take effect within 5 minutes
 - **Invite consumption**: Invites are deleted from Redis on first use (one-time activation)
 - **Admin self-protection**: Admin cannot demote or remove themselves
 - **CSRF protection**: SameSite=Lax cookie attribute prevents cross-site request forgery
+- **Authenticated API endpoints**: Canton token exchange, proxy, and credentials endpoints require valid session cookies
+- **Admin-only credentials endpoint**: Only admins can store/modify server-side Canton node credentials

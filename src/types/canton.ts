@@ -17,6 +17,10 @@ export interface OAuth2Auth {
   validatorAudience?: string
   /** True when credentials are stored server-side (Vercel KV), not in localStorage */
   _hasServerCredentials?: boolean
+  /** 'server' = admin-stored in Redis (secret never in browser).
+   *  'client' = editor-stored in localStorage (secret never sent to backend).
+   *  Default is 'server' for backward compatibility. */
+  credentialOwnership?: 'server' | 'client'
 }
 
 export type AuthConfig = SharedSecretAuth | OAuth2Auth

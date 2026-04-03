@@ -758,8 +758,16 @@ const tokenCache: Record<string, { token: string; expiresAt: number }> = {}
 async function fetchOAuth2Token(node: NodeConfig, audience: string): Promise<string> {
   if (node.auth.mode !== 'oauth2') throw new Error('Not OAuth2')
 
+  const isClientOwned = node.auth.credentialOwnership === 'client'
+
+  // Client-owned credentials: exchange token directly with OAuth provider from browser.
+  // The client secret NEVER touches our backend — only the resulting access token does (via proxy).
+  if (isClientOwned && node.auth.tokenUrl && node.auth.clientId && node.auth.clientSecret) {
+    return fetchOAuth2TokenDirect(node.auth.tokenUrl, node.auth.clientId, node.auth.clientSecret, audience)
+  }
+
   if (isVercel) {
-    // On Vercel: server looks up credentials from env vars or Vercel KV.
+    // Server-owned credentials: server looks up from env vars or Redis.
     // Client only sends nodeId + audience — no secrets in the request.
     const res = await axios.post('/api/auth/token', { audience, nodeId: node.id })
     return res.data.access_token
@@ -784,6 +792,68 @@ async function fetchOAuth2Token(node: NodeConfig, audience: string): Promise<str
   )
 
   return res.data.access_token
+}
+
+/** Exchange OAuth2 credentials directly with the provider from the browser.
+ *  Used for editor-owned nodes — the client secret never touches our backend.
+ *  Falls back to Vite proxy on local dev (for CORS). */
+async function fetchOAuth2TokenDirect(
+  tokenUrl: string,
+  clientId: string,
+  clientSecret: string,
+  audience: string,
+): Promise<string> {
+  const body = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: clientId,
+    client_secret: clientSecret,
+    audience,
+  }).toString()
+
+  // Try direct fetch first (works if OAuth provider has CORS enabled)
+  try {
+    const res = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    })
+    if (res.ok) {
+      const data = await res.json()
+      return data.access_token
+    }
+    // If we get a non-CORS error (e.g., 401), throw it
+    if (res.status !== 0) {
+      throw new Error(`OAuth2 token exchange failed: ${res.status}`)
+    }
+  } catch (err) {
+    // CORS error manifests as TypeError: Failed to fetch
+    // Fall through to proxy
+    if (!(err instanceof TypeError)) throw err
+  }
+
+  // CORS blocked — use proxy (on Vercel) or Vite proxy (local dev) as passthrough
+  // NOTE: This means the proxy sees the client secret. We log a warning.
+  console.warn('[auth] Direct OAuth2 exchange blocked by CORS — falling back to proxy. The client secret will pass through the server.')
+  if (isVercel) {
+    // Use the Vercel proxy to reach the OAuth provider
+    const urlObj = new URL(tokenUrl)
+    const encoded = btoa(urlObj.origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    const res = await axios.post(
+      `/api/proxy/${encoded}${urlObj.pathname}`,
+      body,
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    )
+    return res.data.access_token
+  } else {
+    const urlObj = new URL(tokenUrl)
+    const encoded = encodeOriginBase64url(urlObj.origin)
+    const res = await axios.post(
+      `/proxy/oauth2-token/${encoded}${urlObj.pathname}`,
+      body,
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    )
+    return res.data.access_token
+  }
 }
 
 function getCachedToken(cacheKey: string): string | null {
