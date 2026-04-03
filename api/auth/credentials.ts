@@ -35,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(204).end()
   }
 
-  // Require authenticated user with editor+ role to manage credentials
+  // Require admin role to manage node credentials
   const authSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
   if (authSecret) {
     const cookieHeader = req.headers.cookie || ''
@@ -44,12 +44,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (match) {
       try {
         const { payload } = await jwtVerify(match[1], new TextEncoder().encode(authSecret))
-        const role = payload.role as string
-        authorized = role === 'admin' || role === 'editor'
+        authorized = payload.role === 'admin'
       } catch { /* invalid token */ }
     }
     if (!authorized) {
-      return res.status(403).json({ error: 'Editor or admin access required' })
+      return res.status(403).json({ error: 'Admin access required' })
     }
   }
 
