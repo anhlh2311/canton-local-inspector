@@ -7,7 +7,7 @@ Canton Local Inspector uses Google OAuth for user authentication and an invite-o
 ```mermaid
 flowchart TD
     USER["User visits site"] --> CHECK{"Vercel deployment?"}
-    CHECK -->|No (local dev)| MOCK["Auto-authenticated<br/>as mock admin"]
+    CHECK -->|No - local dev| MOCK["Auto-authenticated<br/>as mock admin"]
     CHECK -->|Yes| SESSION{"Session cookie<br/>exists?"}
     SESSION -->|No| LOGIN["Redirect to /login"]
     SESSION -->|Yes| VERIFY["Verify JWT cookie<br/>(GET /api/auth/session)"]
