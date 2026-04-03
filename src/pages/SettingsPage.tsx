@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { nodesAtom, refreshIntervalAtom, selectedNodeIdAtom, autoQueryContractsAtom } from '@/stores/nodeStore'
 import { DEFAULT_NODES } from '@/constants/nodes'
 import { saveNodeCredentials, deleteNodeCredentials, triggerIndexRefresh } from '@/api/canton'
@@ -262,17 +263,18 @@ function NodeConfigCard({
               </div>
               <div>
                 <label className="text-[10px] text-muted-foreground">Network</label>
-                <select
-                  value={form.network || ''}
-                  onChange={(e) => setForm({ ...form, network: (e.target.value || undefined) as NodeConfig['network'] })}
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
-                >
-                  <option value="">—</option>
-                  <option value="local">Local</option>
-                  <option value="devnet">Devnet</option>
-                  <option value="testnet">Testnet</option>
-                  <option value="mainnet">Mainnet</option>
-                </select>
+                <Select value={form.network || '_none'} onValueChange={(v) => setForm({ ...form, network: (v === '_none' ? undefined : v) as NodeConfig['network'] })}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">—</SelectItem>
+                    <SelectItem value="local">Local</SelectItem>
+                    <SelectItem value="devnet">Devnet</SelectItem>
+                    <SelectItem value="testnet">Testnet</SelectItem>
+                    <SelectItem value="mainnet">Mainnet</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="text-[10px] text-muted-foreground">Color</label>

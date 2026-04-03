@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { useAuth, type UserRole } from '@/context/AuthContext'
 
 interface UserRecord {
@@ -168,14 +169,15 @@ export function UsersPage() {
               onKeyDown={(e) => e.key === 'Enter' && handleInvite()}
               className="flex-1"
             />
-            <select
-              value={inviteRole}
-              onChange={(e) => setInviteRole(e.target.value as 'editor' | 'viewer')}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="viewer">Viewer</option>
-              <option value="editor">Editor</option>
-            </select>
+            <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as 'editor' | 'viewer')}>
+              <SelectTrigger className="w-[110px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="viewer">Viewer</SelectItem>
+                <SelectItem value="editor">Editor</SelectItem>
+              </SelectContent>
+            </Select>
             <Button onClick={handleInvite} disabled={inviting || !inviteEmail.trim()}>
               {inviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4 mr-1" />}
               Invite
@@ -217,23 +219,26 @@ export function UsersPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <select
-                      value={u.role}
-                      onChange={(e) => handleChangeRole(u.id, e.target.value as UserRole)}
-                      disabled={u.id === currentUser?.id}
-                      className="h-7 rounded-md border border-input bg-background px-2 text-[10px]"
-                    >
-                      <option value="viewer">Viewer</option>
-                      <option value="editor">Editor</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                    <Badge variant="outline" className={`text-[10px] capitalize ${ROLE_COLORS[u.role] || ''}`}>
-                      {u.role}
-                    </Badge>
-                    {u.id !== currentUser?.id && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRevokeUser(u.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                    {u.id === currentUser?.id ? (
+                      <Badge variant="outline" className={`text-[10px] capitalize ${ROLE_COLORS[u.role] || ''}`}>
+                        {u.role} (you)
+                      </Badge>
+                    ) : (
+                      <>
+                        <Select value={u.role} onValueChange={(v) => handleChangeRole(u.id, v as UserRole)}>
+                          <SelectTrigger className="h-7 w-[100px] text-[11px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="viewer">Viewer</SelectItem>
+                            <SelectItem value="editor">Editor</SelectItem>
+                            <SelectItem value="admin">Admin</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRevokeUser(u.id)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
