@@ -29,7 +29,17 @@ const ALLOWED_TARGETS = getAllowedTargets()
 
 function isAllowedTarget(url: string): boolean {
   if (ALLOWED_TARGETS.length === 0) return true
-  return ALLOWED_TARGETS.some((allowed) => url.startsWith(allowed))
+  try {
+    const targetHost = new URL(url).hostname
+    return ALLOWED_TARGETS.some((allowed) => {
+      try {
+        // Match by hostname — allows different ports/paths on the same host
+        return new URL(allowed).hostname === targetHost
+      } catch { return url.startsWith(allowed) }
+    })
+  } catch {
+    return ALLOWED_TARGETS.some((allowed) => url.startsWith(allowed))
+  }
 }
 
 function base64urlDecode(str: string): string {
