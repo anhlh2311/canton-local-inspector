@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { jwtVerify } from 'jose'
 
 /**
  * Canton API proxy serverless function.
@@ -41,6 +42,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
     return res.status(204).end()
+  }
+
+  // Require valid user session to proxy Canton API requests
+  const authSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
+  if (authSecret) {
+    const cookieHeader = req.headers.cookie || ''
+    const match = cookieHeader.match(/canton-session=([^;]+)/)
+    let authenticated = false
+    if (match) {
+      try {
+        const { payload } = await jwtVerify(match[1], new TextEncoder().encode(authSecret))
+        authenticated = !payload.denied
+      } catch { /* invalid token */ }
+    }
+    if (!authenticated) {
+      return res.status(401).json({ error: 'Authentication required' })
+    }
   }
 
   // Path comes from rewrite query param

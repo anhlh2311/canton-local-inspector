@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { jwtVerify } from 'jose'
 import { Redis } from '@upstash/redis'
 
 /**
@@ -50,9 +51,28 @@ async function getStoredCredentials(nodeId: string): Promise<NodeAuthConfig | nu
   return redis.get<NodeAuthConfig>(`canton:creds:${nodeId}`)
 }
 
+async function verifySession(req: VercelRequest): Promise<boolean> {
+  const authSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
+  if (!authSecret) return true // No auth configured — allow (local dev / unconfigured)
+  const cookieHeader = req.headers.cookie || ''
+  const match = cookieHeader.match(/canton-session=([^;]+)/)
+  if (!match) return false
+  try {
+    const { payload } = await jwtVerify(match[1], new TextEncoder().encode(authSecret))
+    return !payload.denied // Authenticated and not denied
+  } catch {
+    return false
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  // Require valid user session to get Canton node tokens
+  if (!(await verifySession(req))) {
+    return res.status(401).json({ error: 'Authentication required' })
   }
 
   const { audience, nodeId } = req.body ?? {}

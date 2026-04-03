@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { jwtVerify } from 'jose'
 import { Redis } from '@upstash/redis'
 
 /**
@@ -32,6 +33,24 @@ function kvKey(nodeId: string): string {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
     return res.status(204).end()
+  }
+
+  // Require authenticated user with editor+ role to manage credentials
+  const authSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
+  if (authSecret) {
+    const cookieHeader = req.headers.cookie || ''
+    const match = cookieHeader.match(/canton-session=([^;]+)/)
+    let authorized = false
+    if (match) {
+      try {
+        const { payload } = await jwtVerify(match[1], new TextEncoder().encode(authSecret))
+        const role = payload.role as string
+        authorized = role === 'admin' || role === 'editor'
+      } catch { /* invalid token */ }
+    }
+    if (!authorized) {
+      return res.status(403).json({ error: 'Editor or admin access required' })
+    }
   }
 
   const redis = getRedis()
