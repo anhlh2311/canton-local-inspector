@@ -80,7 +80,8 @@ export function UsersPage() {
         setError(data.error || 'Failed to invite')
         return
       }
-      setSuccess(`Invited ${inviteEmail.trim()} as ${inviteRole}`)
+      const emailNote = data.emailSent ? ' — invitation email sent' : ' — no email sent (configure RESEND_API_KEY)'
+      setSuccess(`Invited ${inviteEmail.trim()} as ${inviteRole}${emailNote}`)
       setInviteEmail('')
       fetchData()
     } catch {

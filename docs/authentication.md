@@ -109,7 +109,10 @@ Accessible only to users with the `admin` role. Provides:
 
 - Enter email + select role (viewer or editor)
 - Creates `canton:invites:{email}` in Redis
-- User activates by signing in with Google
+- Sends invitation email via Resend (if `RESEND_API_KEY` is configured)
+- Email includes a link to the login page and the invited role
+- Best-effort: email failure does not block invite creation
+- User activates by signing in with Google (invite is consumed on first login)
 
 **Active Users List:**
 
@@ -156,6 +159,8 @@ canton:invites:list               Set of emails (for listing pending invites)
 | `GOOGLE_CLIENT_SECRET` | Yes (Vercel) | Google OAuth client secret |
 | `AUTH_SECRET` | Yes (Vercel) | Secret for signing JWT session cookies |
 | `ADMIN_EMAIL` | Yes (first deploy) | Email of the initial admin user |
+| `RESEND_API_KEY` | No (optional) | Resend API key for sending invite emails |
+| `RESEND_FROM_EMAIL` | No (optional) | Sender address for invite emails |
 
 ### Google OAuth Setup
 

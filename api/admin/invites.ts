@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { jwtVerify } from 'jose'
 import { Redis } from '@upstash/redis'
+import { Resend } from 'resend'
 
 /**
  * Invite management endpoints (admin only).
@@ -94,7 +95,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       redis.set(`canton:invites:${normalEmail}`, invite),
       redis.sadd('canton:invites:list', normalEmail),
     ])
-    return res.status(201).json({ ok: true, invite: { email: normalEmail, ...invite } })
+
+    // Send invitation email (best-effort — failure doesn't block invite creation)
+    let emailSent = false
+    const resendKey = process.env.RESEND_API_KEY
+    if (resendKey) {
+      try {
+        const resend = new Resend(resendKey)
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Canton Inspector <noreply@resend.dev>'
+        const appUrl = process.env.NEXTAUTH_URL || `https://${req.headers.host}`
+
+        await resend.emails.send({
+          from: fromEmail,
+          to: normalEmail,
+          subject: 'You\'ve been invited to Canton Inspector',
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+              <h2 style="color: #6366f1; margin-bottom: 8px;">Canton Inspector</h2>
+              <p>Hi there,</p>
+              <p><strong>${admin.email}</strong> has invited you to access Canton Inspector as a <strong>${role}</strong>.</p>
+              <p>Sign in with your Google account to get started:</p>
+              <a href="${appUrl}/login" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 16px 0;">Sign in to Canton Inspector</a>
+              <p style="color: #666; font-size: 13px;">Make sure to sign in with <strong>${normalEmail}</strong> — this is the email your invitation is linked to.</p>
+            </div>
+          `,
+        })
+        emailSent = true
+      } catch (emailErr) {
+        console.warn('[invites] Email send failed:', emailErr instanceof Error ? emailErr.message : emailErr)
+      }
+    }
+
+    return res.status(201).json({ ok: true, emailSent, invite: { email: normalEmail, ...invite } })
   }
 
   // DELETE — Revoke invite
