@@ -144,7 +144,7 @@ export function UsersPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-3xl w-full">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">User Management</h2>
         <p className="text-muted-foreground text-sm mt-1">Invite users and manage access roles</p>
@@ -160,7 +160,7 @@ export function UsersPage() {
           <CardDescription>Send an invitation by email. The user signs in with Google to activate.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <Input
               placeholder="user@example.com"
               type="email"
@@ -204,7 +204,7 @@ export function UsersPage() {
           ) : (
             <div className="space-y-2">
               {users.map((u) => (
-                <div key={u.id} className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/30">
+                <div key={u.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 py-2 px-3 rounded-md bg-muted/30">
                   <div className="flex items-center gap-3 min-w-0">
                     {u.image ? (
                       <img src={u.image} alt="" className="h-8 w-8 rounded-full shrink-0" referrerPolicy="no-referrer" />
@@ -263,7 +263,7 @@ export function UsersPage() {
           <CardContent>
             <div className="space-y-2">
               {invites.map((inv) => (
-                <div key={inv.email} className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/30">
+                <div key={inv.email} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 py-2 px-3 rounded-md bg-muted/30">
                   <div className="min-w-0">
                     <p className="text-sm font-mono truncate">{inv.email}</p>
                     <p className="text-[10px] text-muted-foreground">

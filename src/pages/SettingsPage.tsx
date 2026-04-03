@@ -96,7 +96,7 @@ function AuthConfigForm({ auth, onChange, secretOverride }: {
       </div>
 
       {auth.mode === 'shared-secret' && (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           <div>
             <label className="text-[10px] text-muted-foreground">User ID</label>
             <Input value={auth.userId} onChange={(e) => onChange({ ...auth, userId: e.target.value })} />
@@ -117,7 +117,7 @@ function AuthConfigForm({ auth, onChange, secretOverride }: {
       )}
 
       {auth.mode === 'oauth2' && (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           <div className="col-span-2">
             <label className="text-[10px] text-muted-foreground">Token URL</label>
             <Input value={auth.tokenUrl} onChange={(e) => onChange({ ...auth, tokenUrl: e.target.value })} placeholder="https://your-tenant.auth0.com/oauth/token" />
@@ -271,7 +271,7 @@ function NodeConfigCard({
 
         {/* Pre-configured node: read-only expandable view */}
         {isPreconfigured && expanded && (
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs border-t border-border/50 pt-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 text-xs border-t border-border/50 pt-3">
             <div>
               <span className="text-muted-foreground">JSON API: </span>
               <span className="font-mono text-[10px]">
@@ -316,7 +316,7 @@ function NodeConfigCard({
         {/* Custom node: editable */}
         {!isPreconfigured && editing ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
               <div className="col-span-2">
                 <label className="text-[10px] text-muted-foreground">Name</label>
                 <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -348,7 +348,7 @@ function NodeConfigCard({
               <label className="text-[10px] text-muted-foreground font-medium">Connection</label>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <div className="col-span-2">
                 <label className="text-[10px] text-muted-foreground">JSON API URL</label>
                 <Input value={form.jsonApiUrl} onChange={(e) => setForm({ ...form, jsonApiUrl: e.target.value })} placeholder="http://localhost or http://1.2.3.4" />
@@ -358,7 +358,7 @@ function NodeConfigCard({
                 <Input type="number" value={form.jsonApiPort} onChange={(e) => setForm({ ...form, jsonApiPort: parseInt(e.target.value) || 0 })} />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <div className="col-span-2">
                 <label className="text-[10px] text-muted-foreground">Validator API URL</label>
                 <Input value={form.validatorApiUrl} onChange={(e) => setForm({ ...form, validatorApiUrl: e.target.value })} placeholder="http://localhost or http://1.2.3.4" />
@@ -369,7 +369,7 @@ function NodeConfigCard({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <div>
                 <label className="text-[10px] text-muted-foreground">Admin User (optional)</label>
                 <Input value={form.adminUser ?? ''} onChange={(e) => setForm({ ...form, adminUser: e.target.value || undefined })} />
@@ -410,7 +410,7 @@ function NodeConfigCard({
             </Button>
           </div>
         ) : !isPreconfigured ? (
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 text-xs">
             <div>
               <span className="text-muted-foreground">JSON API: </span>
               <span className="font-mono text-[10px]">
@@ -599,7 +599,7 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-3xl w-full">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
         <p className="text-muted-foreground text-sm mt-1">Configure node connections and preferences</p>
@@ -652,7 +652,7 @@ export function SettingsPage() {
           <h3 className="text-lg font-semibold">Node Configurations</h3>
           <p className="text-xs text-muted-foreground">Manage connected Canton participant nodes</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={handleReset}>
             <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
           </Button>

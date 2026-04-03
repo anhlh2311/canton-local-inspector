@@ -19,7 +19,7 @@ export function NodeSelector() {
 
   return (
     <Select value={selectedNodeId} onValueChange={handleNodeChange}>
-      <SelectTrigger className="w-[220px]">
+      <SelectTrigger className="w-[140px] sm:w-[220px]">
         <SelectValue placeholder="Select node" />
       </SelectTrigger>
       <SelectContent>

@@ -138,7 +138,7 @@ function ContractCard({ contract, defaultExpanded }: { contract: ActiveContract;
           {expanded ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
           <IdDisplay id={evt.contractId} truncate={16} />
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <Badge variant="outline" className={cn("text-[10px] font-mono", badgeStyles.indigo(dark))}>
             {evt.templateId?.split(':').pop() ?? 'Unknown'}
           </Badge>

@@ -30,11 +30,11 @@ const ROLE_COLORS: Record<string, string> = {
   viewer: 'bg-gray-500/20 text-gray-400',
 }
 
-export function Sidebar() {
+export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { user, isAdmin, isEditor, signOut } = useAuth()
 
   return (
-    <aside className="w-60 border-r border-border bg-card flex flex-col shrink-0">
+    <aside className="w-60 border-r border-border bg-card flex flex-col shrink-0 h-full">
       <div className="p-4 border-b border-border">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center">
@@ -53,6 +53,7 @@ export function Sidebar() {
               key={item.to}
               to={item.to}
               end={item.to === '/'}
+              onClick={onNavigate}
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
@@ -75,6 +76,7 @@ export function Sidebar() {
               </div>
               <NavLink
                 to="/admin/users"
+                onClick={onNavigate}
                 className={({ isActive }) =>
                   cn(
                     'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',

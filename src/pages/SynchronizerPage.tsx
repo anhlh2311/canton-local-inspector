@@ -81,7 +81,7 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
 
       {mergedTemplates.length > 0 && (
         <>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">
@@ -100,7 +100,7 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
               value={templateSearch}
               onChange={setTemplateSearch}
               placeholder="Filter templates..."
-              className="w-60"
+              className="w-full sm:w-60"
             />
           </div>
 
