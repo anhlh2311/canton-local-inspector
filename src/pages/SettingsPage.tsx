@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import { nodesAtom, refreshIntervalAtom, selectedNodeIdAtom, autoQueryContractsAtom } from '@/stores/nodeStore'
 import { DEFAULT_NODES } from '@/constants/nodes'
 import { saveNodeCredentials, deleteNodeCredentials, triggerIndexRefresh } from '@/api/canton'
@@ -567,18 +568,12 @@ export function SettingsPage() {
             </div>
           </div>
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Packages Page</label>
-            <div className="flex items-center gap-2">
-              <Button
-                variant={autoQueryContracts ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setAutoQueryContracts(!autoQueryContracts)}
-              >
-                {autoQueryContracts ? 'Auto-query active contracts: On' : 'Auto-query active contracts: Off'}
-              </Button>
-              <span className="text-[10px] text-muted-foreground">
-                When on, expanding a package queries active contract counts per template
-              </span>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium">Auto-query active contracts</p>
+                <p className="text-[10px] text-muted-foreground">When on, expanding a package queries contract counts per template</p>
+              </div>
+              <Switch checked={autoQueryContracts} onCheckedChange={setAutoQueryContracts} />
             </div>
           </div>
         </CardContent>
