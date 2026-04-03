@@ -331,25 +331,60 @@ export function PackagesPage() {
       {packages.isLoading && <LoadingSpinner text="Loading packages..." className="py-12" />}
       {packages.error && <ErrorDisplay error={packages.error as Error} />}
 
-      <div className="space-y-2">
-        {filteredPackages.map((pkg) => (
-          <PackageCard
-            key={pkg.id}
-            packageId={pkg.id}
-            info={pkg.info}
-            expanded={expandedPkg === pkg.id}
-            onToggle={() => setExpandedPkg(expandedPkg === pkg.id ? null : pkg.id)}
-          />
-        ))}
+      {(() => {
+        const indexed = filteredPackages.filter((p) => p.info)
+        const unidentified = filteredPackages.filter((p) => !p.info)
 
-        {filteredPackages.length === 0 && !packages.isLoading && (
-          <EmptyState
-            icon={Package}
-            title={search ? 'No matching packages' : 'No packages installed'}
-            description={search ? 'Try a different search term' : 'No packages found on this node'}
-          />
-        )}
-      </div>
+        return (
+          <>
+            {/* Indexed packages */}
+            {indexed.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold">Indexed Packages</h3>
+                  <Badge variant="secondary" className="text-[10px]">{indexed.length}</Badge>
+                </div>
+                {indexed.map((pkg) => (
+                  <PackageCard
+                    key={pkg.id}
+                    packageId={pkg.id}
+                    info={pkg.info}
+                    expanded={expandedPkg === pkg.id}
+                    onToggle={() => setExpandedPkg(expandedPkg === pkg.id ? null : pkg.id)}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Unidentified packages */}
+            {unidentified.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-muted-foreground">Unidentified Packages</h3>
+                  <Badge variant="outline" className="text-[10px]">{unidentified.length}</Badge>
+                </div>
+                {unidentified.map((pkg) => (
+                  <PackageCard
+                    key={pkg.id}
+                    packageId={pkg.id}
+                    info={pkg.info}
+                    expanded={expandedPkg === pkg.id}
+                    onToggle={() => setExpandedPkg(expandedPkg === pkg.id ? null : pkg.id)}
+                  />
+                ))}
+              </div>
+            )}
+
+            {filteredPackages.length === 0 && !packages.isLoading && (
+              <EmptyState
+                icon={Package}
+                title={search ? 'No matching packages' : 'No packages installed'}
+                description={search ? 'Try a different search term' : 'No packages found on this node'}
+              />
+            )}
+          </>
+        )
+      })()}
     </div>
   )
 }
