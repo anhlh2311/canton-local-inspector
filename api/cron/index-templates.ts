@@ -226,9 +226,11 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
   try {
     const wsContracts = await streamActiveContracts(jsonBase, jsonToken, offset)
     for (const c of wsContracts) {
-      const evt = c?.contractEntry?.JsActiveContract?.createdEvent
+      const entry = (c as Record<string, unknown>)?.contractEntry as Record<string, unknown> | undefined
+      const active = entry?.JsActiveContract as Record<string, unknown> | undefined
+      const evt = active?.createdEvent as Record<string, unknown> | undefined
       if (evt?.templateId) {
-        const e = parseTemplateId(evt.templateId, evt.packageName ?? '')
+        const e = parseTemplateId(evt.templateId as string, (evt.packageName as string) ?? '')
         if (e) templates.set(e.templateId, e)
       }
     }
@@ -254,9 +256,11 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
       const contracts = await res.json()
       if (Array.isArray(contracts)) {
         for (const c of contracts) {
-          const evt = c?.contractEntry?.JsActiveContract?.createdEvent
+          const entry = (c as Record<string, unknown>)?.contractEntry as Record<string, unknown> | undefined
+          const active = entry?.JsActiveContract as Record<string, unknown> | undefined
+          const evt = active?.createdEvent as Record<string, unknown> | undefined
           if (evt?.templateId) {
-            const e = parseTemplateId(evt.templateId, evt.packageName ?? '')
+            const e = parseTemplateId(evt.templateId as string, (evt.packageName as string) ?? '')
             if (e) templates.set(e.templateId, e)
           }
         }
@@ -277,8 +281,8 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
       const usersData = await usersRes.json()
       const parties = new Set<string>()
       for (const entry of usersData.users ?? []) {
-        const u = entry?.user ?? entry
-        if (u?.primaryParty) parties.add(u.primaryParty)
+        const u = (entry as Record<string, unknown>)?.user ?? entry
+        if ((u as Record<string, unknown>)?.primaryParty) parties.add((u as Record<string, unknown>).primaryParty as string)
       }
       for (const party of [...parties].slice(0, 5)) {
         try {
@@ -295,9 +299,11 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
             const contracts = await res.json()
             if (Array.isArray(contracts)) {
               for (const c of contracts) {
-                const evt = c?.contractEntry?.JsActiveContract?.createdEvent
+                const cEntry = (c as Record<string, unknown>)?.contractEntry as Record<string, unknown> | undefined
+                const cActive = cEntry?.JsActiveContract as Record<string, unknown> | undefined
+                const evt = cActive?.createdEvent as Record<string, unknown> | undefined
                 if (evt?.templateId) {
-                  const e = parseTemplateId(evt.templateId, evt.packageName ?? '')
+                  const e = parseTemplateId(evt.templateId as string, (evt.packageName as string) ?? '')
                   if (e) templates.set(e.templateId, e)
                 }
               }
