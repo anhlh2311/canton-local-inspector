@@ -42,6 +42,8 @@ export interface NodeConfig {
   // Auth configuration
   auth: AuthConfig
   // Optional metadata
+  /** True for nodes from VITE_NODES env var or quickstart defaults (not user-added) */
+  _preconfigured?: boolean
   adminUser?: string
   globalSynchronizerId?: string
 }

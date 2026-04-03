@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
-import { Settings, Plus, Trash2, Save, RotateCcw, Eye, EyeOff, Globe, Key, Loader2, Layers } from 'lucide-react'
+import { Settings, Plus, Trash2, Save, RotateCcw, Eye, EyeOff, Globe, Key, Loader2, Layers, Pencil, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -225,15 +225,22 @@ function NodeConfigCard({
   }
 
   const isLocal = node.jsonApiUrl === 'http://localhost'
+  const isPreconfigured = !!node._preconfigured
+  const [expanded, setExpanded] = useState(false)
 
   return (
     <Card className={isSelected ? 'border-primary' : ''}>
       <CardContent className="p-4">
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="h-3 w-3 rounded-full" style={{ backgroundColor: node.color }} />
             <span className="font-medium text-sm">{node.name}</span>
             {isSelected && <Badge variant="default" className="text-[10px]">Active</Badge>}
+            {isPreconfigured ? (
+              <Badge className="text-[10px] bg-emerald-500/20 text-emerald-600 border-emerald-500/30">Pre-configured</Badge>
+            ) : (
+              <Badge className="text-[10px] bg-amber-500/20 text-amber-600 border-amber-500/30">Custom</Badge>
+            )}
             <Badge variant={isLocal ? 'secondary' : 'outline'} className="text-[10px]">
               {isLocal ? 'Local' : 'Remote'}
             </Badge>
@@ -245,16 +252,69 @@ function NodeConfigCard({
             </Badge>
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" onClick={() => editing ? handleCancel() : setEditing(true)}>
-              {editing ? 'Cancel' : 'Edit'}
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onDelete}>
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            {isPreconfigured ? (
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setExpanded(!expanded)} title={expanded ? 'Collapse' : 'View details'}>
+                {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </Button>
+            ) : (
+              <>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => editing ? handleCancel() : setEditing(true)} title={editing ? 'Cancel' : 'Edit'}>
+                  {editing ? <X className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onDelete} title="Delete">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
           </div>
         </div>
 
-        {editing ? (
+        {/* Pre-configured node: read-only expandable view */}
+        {isPreconfigured && expanded && (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs border-t border-border/50 pt-3">
+            <div>
+              <span className="text-muted-foreground">JSON API: </span>
+              <span className="font-mono text-[10px]">
+                {node.jsonApiUrl === 'http://localhost'
+                  ? `localhost:${node.jsonApiPort}`
+                  : node.jsonApiPort ? `${node.jsonApiUrl}:${node.jsonApiPort}` : node.jsonApiUrl}
+              </span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Validator: </span>
+              <span className="font-mono text-[10px]">
+                {node.validatorApiUrl === 'http://localhost'
+                  ? `localhost:${node.validatorApiPort}`
+                  : node.validatorApiPort ? `${node.validatorApiUrl}:${node.validatorApiPort}` : node.validatorApiUrl}
+              </span>
+            </div>
+            {node.adminUser && (
+              <div>
+                <span className="text-muted-foreground">Admin: </span>
+                <span className="font-mono">{node.adminUser}</span>
+              </div>
+            )}
+            {node.globalSynchronizerId && (
+              <div className="col-span-2">
+                <span className="text-muted-foreground">Synchronizer: </span>
+                <span className="font-mono text-[10px]">{node.globalSynchronizerId}</span>
+              </div>
+            )}
+            <div>
+              <span className="text-muted-foreground">Auth: </span>
+              <span className="font-mono">{node.auth.mode === 'oauth2' ? 'OAuth2' : 'Shared Secret'}</span>
+            </div>
+            {node.auth.mode === 'oauth2' && (
+              <div>
+                <span className="text-muted-foreground">Audience: </span>
+                <span className="font-mono text-[10px]">{node.auth.audience}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Custom node: editable */}
+        {!isPreconfigured && editing ? (
           <div className="space-y-3">
             <div className="grid grid-cols-4 gap-2">
               <div className="col-span-2">
@@ -349,7 +409,7 @@ function NodeConfigCard({
               {saving ? 'Saving...' : 'Save'}
             </Button>
           </div>
-        ) : (
+        ) : !isPreconfigured ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
             <div>
               <span className="text-muted-foreground">JSON API: </span>
@@ -380,7 +440,7 @@ function NodeConfigCard({
               </div>
             )}
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   )
