@@ -120,6 +120,17 @@ For remote validators using OAuth2 (Auth0, Keycloak, etc.):
 
 The app automatically grants `CanReadAsAnyParty` rights to the authenticated user on each node for contract visibility (shared-secret mode only).
 
+### User Authentication (Google Login)
+
+The web app itself is protected by Google OAuth (invite-only access):
+
+- **Google OAuth** with custom Vercel serverless handlers (no NextAuth dependency)
+- **Invite-only**: Only users invited by an admin or matching `ADMIN_EMAIL` can access the app
+- **3 roles**: Admin (full access), Editor (modify settings), Viewer (read-only)
+- **JWT session cookies**: Signed with `jose` (HS256), HTTP-only, 24-hour expiry
+- **Admin panel**: `/admin/users` page for inviting users, changing roles, and revoking access
+- **Local dev bypass**: Auth is skipped when `VITE_DEPLOY_ENV !== 'vercel'`
+
 ## Template Discovery & Indexing
 
 Canton's JSON API limits active contract responses to 200 elements per request. The inspector uses a multi-strategy approach to discover all templates:
@@ -281,18 +292,30 @@ KV_REST_API_TOKEN=<your-token>
 
 # Cron job security (generate with: openssl rand -base64 24)
 CRON_SECRET=<your-random-secret>
+
+# Google OAuth (user authentication)
+GOOGLE_CLIENT_ID=<your-google-client-id>
+GOOGLE_CLIENT_SECRET=<your-google-client-secret>
+AUTH_SECRET=<random-32-char-string>
+ADMIN_EMAIL=admin@example.com
 ```
 
 ### Serverless Functions
 
 | Function | Purpose |
 |----------|---------|
-| `POST /api/auth/token` | OAuth2 client credentials exchange — looks up secrets from env vars or Redis |
-| `POST/GET/DELETE /api/auth/credentials` | Manage OAuth2 credentials for dynamic nodes in Redis |
-| `GET /api/proxy/{base64url-origin}/{path}` | Forward requests to Canton APIs — validates allowed targets, blocks localhost |
-| `GET /api/templates?nodeId=xxx` | Serve cached template index from Redis |
-| `GET /api/cron/index-templates` | Cron-triggered template indexing (secured by `CRON_SECRET`) |
-| `POST /api/cron/index-templates` | Manual index trigger (same-origin auth, 5-min cooldown) |
+| `GET /api/auth/google-login` | Redirects to Google OAuth consent screen |
+| `GET /api/auth/google-callback` | Handles OAuth callback, creates user, sets session cookie |
+| `GET /api/auth/session` | Returns current user from JWT cookie (role refreshed from Redis) |
+| `POST /api/auth/logout` | Clears session cookie |
+| `POST /api/auth/token` | Canton node OAuth2 client credentials exchange |
+| `POST/GET/DELETE /api/auth/credentials` | Manage Canton node OAuth2 credentials in Redis |
+| `GET/PATCH/DELETE /api/admin/users` | List, change role, revoke user access (admin only) |
+| `GET/POST/DELETE /api/admin/invites` | List, create, revoke invites (admin only) |
+| `GET /api/proxy/{base64url-origin}/{path}` | Forward requests to Canton APIs |
+| `GET /api/templates?network=xxx` | Serve cached template index from Redis |
+| `GET /api/cron/index-templates` | Cron-triggered template indexing |
+| `POST /api/cron/index-templates` | Manual index trigger (same-origin, 5-min cooldown) |
 
 ### Cron Jobs
 
