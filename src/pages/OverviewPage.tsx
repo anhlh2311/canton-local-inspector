@@ -4,7 +4,6 @@ import {
   Globe,
   Users,
   Package,
-  FileCode,
   Zap,
   Server,
 } from 'lucide-react'
@@ -225,36 +224,22 @@ export function OverviewPage() {
             )}
 
             <div>
-              <p className="text-xs text-muted-foreground mb-1">Connected Synchronizers</p>
-              <Badge variant="secondary">
-                {synchronizers.data?.connectedSynchronizers?.length ?? 0} synchronizer(s)
-              </Badge>
+              <p className="text-xs text-muted-foreground mb-1">
+                Connected Synchronizers ({synchronizers.data?.connectedSynchronizers?.length ?? 0})
+              </p>
+              {synchronizers.data?.connectedSynchronizers?.map((sync, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-2 mt-1">
+                  <IdDisplay id={sync.synchronizerId} truncate={16} />
+                  <Badge variant="success" className="text-[10px]">Connected</Badge>
+                </div>
+              ))}
+              {(!synchronizers.data?.connectedSynchronizers || synchronizers.data.connectedSynchronizers.length === 0) && (
+                <Badge variant="secondary">0 synchronizer(s)</Badge>
+              )}
             </div>
           </CardContent>
         </Card>
       </div>
-
-      {/* Connected Synchronizers Detail */}
-      {synchronizers.data?.connectedSynchronizers && synchronizers.data.connectedSynchronizers.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <FileCode className="h-4 w-4" />
-              Connected Synchronizers
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {synchronizers.data.connectedSynchronizers.map((sync, i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50">
-                  <IdDisplay id={sync.synchronizerId} truncate={20} label="Synchronizer" />
-                  <Badge variant="success">Connected</Badge>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }
