@@ -799,6 +799,7 @@ function ContractIdTab() {
               placeholder="Paste full contract ID..."
               value={contractId}
               onChange={(v) => { setContractId(v); setSearched(false) }}
+              onSubmit={handleSearch}
             />
           </div>
           <Button
