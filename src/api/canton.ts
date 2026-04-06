@@ -193,6 +193,26 @@ export async function getLedgerEnd(node: NodeConfig, token: string): Promise<Led
   return res.data
 }
 
+/** Look up a contract by its ID using the events-by-contract-id endpoint.
+ *  No party or template needed — uses filtersForAnyParty wildcard. */
+export async function getEventsByContractId(node: NodeConfig, token: string, contractId: string): Promise<unknown> {
+  const client = createJsonApiClient(node, token)
+  const res = await client.post('/v2/events/events-by-contract-id', {
+    contractId,
+    eventFormat: {
+      filtersForAnyParty: {
+        cumulative: [{
+          identifierFilter: {
+            WildcardFilter: { value: { includeCreatedEventBlob: false } }
+          }
+        }]
+      },
+      verbose: true,
+    },
+  })
+  return res.data
+}
+
 export async function getActiveContracts(node: NodeConfig, token: string, request: ActiveContractsRequest): Promise<ActiveContractsResponse> {
   const client = createJsonApiClient(node, token)
   // Fetch ledger end offset if not provided — required by Canton API

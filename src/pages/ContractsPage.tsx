@@ -25,7 +25,7 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { useAtomValue } from 'jotai'
 import { themeAtom } from '@/stores/nodeStore'
 import { useActiveContracts, useFlatUsers, useLedgerEnd, useNodeConfig, useDiscoverTemplates } from '@/hooks/useCantonQuery'
-import { buildTemplateFilter, buildInterfaceFilter } from '@/api/canton'
+import { buildTemplateFilter, buildInterfaceFilter, getAuthToken, getEventsByContractId } from '@/api/canton'
 import { cn, truncateId } from '@/lib/utils'
 import type { ActiveContract } from '@/types/canton'
 
@@ -750,103 +750,84 @@ function InterfaceQueryResults({
 }
 
 function ContractIdTab() {
+  const node = useNodeConfig()
   const [contractId, setContractId] = useState('')
-  const [templateId, setTemplateId] = useState('')
-  const [partyId, setPartyId] = useState('')
-  const [refreshCount, setRefreshCount] = useState(0)
+  const [searching, setSearching] = useState(false)
+  const [result, setResult] = useState<{ events: unknown; created: unknown } | null>(null)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [searched, setSearched] = useState(false)
 
-  // Only query when contract ID is provided — don't load all contracts just to filter client-side
-  const queryRequest = useMemo(() => {
-    const tid = templateId.trim()
-    const pid = partyId.trim()
+  const handleSearch = useCallback(async () => {
     const cid = contractId.trim()
-    if (tid && pid && cid && isValidTemplateId(tid)) {
-      return buildTemplateFilter(pid, tid)
+    if (!cid) return
+
+    setSearching(true)
+    setSearchError(null)
+    setResult(null)
+    setSearched(false)
+
+    try {
+      const token = await getAuthToken(node)
+      const data = await getEventsByContractId(node, token, cid)
+      // Extract the created event from the response
+      const events = data as Record<string, unknown>
+      const createEvent = events?.createEvent as Record<string, unknown> | undefined
+      setResult({ events: data, created: createEvent ?? null })
+      setSearched(true)
+    } catch (err) {
+      const axiosErr = err as { response?: { status?: number; data?: unknown } }
+      if (axiosErr.response?.status === 404) {
+        setSearched(true)
+        setResult(null)
+      } else {
+        setSearchError(err instanceof Error ? err.message : 'Search failed')
+      }
+    } finally {
+      setSearching(false)
     }
-    return null
-  }, [templateId, partyId, contractId])
-
-  const contracts = useActiveContracts(queryRequest, `cid-${templateId}-${contractId}-${refreshCount}`)
-  const partyOptions = usePartyOptions()
-  const templateOpts = useTemplateOptions(partyId || undefined)
-
-  const handleRefresh = useCallback(() => {
-    setRefreshCount((c) => c + 1)
-  }, [])
-
-  const matchedContract = contracts.data
-    ? (contracts.data as ActiveContract[]).find(
-        (c) => c.contractEntry?.JsActiveContract?.createdEvent?.contractId === contractId.trim()
-      )
-    : null
+  }, [node, contractId])
 
   return (
     <div className="space-y-4">
       <Card>
         <CardContent className="p-4 space-y-3">
           <p className="text-xs text-muted-foreground">
-            Select a party and template, then enter a contract ID to find a specific contract.
+            Enter a contract ID to look up its events. No party or template selection needed.
           </p>
-          <div className="grid grid-cols-1 gap-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Party ID</label>
-                <AutocompleteInput
-                  placeholder="Search or select a party..."
-                  value={partyId}
-                  onChange={setPartyId}
-                  options={partyOptions}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Template ID</label>
-                <AutocompleteInput
-                  placeholder={partyId ? "Search or select a template..." : "Select a party first..."}
-                  value={templateId}
-                  onChange={setTemplateId}
-                  options={templateOpts.options}
-                  loading={templateOpts.isLoading}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Contract ID</label>
-              <ClearableInput placeholder="Contract ID to find..." value={contractId} onChange={setContractId} />
-            </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Contract ID</label>
+            <ClearableInput
+              placeholder="Paste full contract ID..."
+              value={contractId}
+              onChange={(v) => { setContractId(v); setSearched(false) }}
+            />
           </div>
-          {queryRequest && (
-            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={contracts.isLoading} className="border-success/50 text-success hover:bg-success/10 hover:text-success">
-              <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", contracts.isLoading && "animate-spin")} />
-              Refresh
-            </Button>
-          )}
+          <Button
+            size="sm"
+            onClick={handleSearch}
+            disabled={searching || !contractId.trim()}
+          >
+            {searching ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Hash className="h-3.5 w-3.5 mr-1.5" />}
+            {searching ? 'Searching...' : 'Find Contract'}
+          </Button>
         </CardContent>
       </Card>
 
-      {contracts.isLoading && <LoadingSpinner text="Searching for contract..." className="py-8" />}
-      {contracts.error && !(contracts.error as { isLimitError?: boolean }).isLimitError && (
-        <ErrorDisplay error={contracts.error as Error} />
-      )}
-      {(contracts.error as { isLimitError?: boolean })?.isLimitError && (
-        <div className="rounded-md bg-muted/50 p-4 text-sm text-muted-foreground">
-          This template has too many contracts to search by ID via HTTP.
-          The contract ID was not found in the first 200 results. Try using the "By Template" tab with the "Load All" button to stream all contracts.
-        </div>
-      )}
+      {searchError && <ErrorDisplay error={searchError} />}
 
-      {matchedContract && (
+      {result?.created != null && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Found Contract</CardTitle>
+            <CardTitle className="text-sm">Contract Events</CardTitle>
           </CardHeader>
-          <CardContent>
-            <ContractCard contract={matchedContract} defaultExpanded />
+          <CardContent className="space-y-3">
+            <JsonViewer data={result.events} />
           </CardContent>
         </Card>
       )}
 
-      {contracts.data && !matchedContract && contractId.trim() && (
-        <EmptyState icon={Hash} title="Contract not found" description={`No contract with ID "${contractId.slice(0, 20)}..." found in the first ${(contracts.data as ActiveContract[]).length} active contracts of this template`} />
+      {searched && !result?.created && !searchError && (
+        <EmptyState icon={Hash} title="Contract not found" description={`No events found for contract ID "${contractId.slice(0, 20)}..."`} />
       )}
     </div>
   )
