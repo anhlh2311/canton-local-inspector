@@ -331,6 +331,12 @@ function TemplateQueryResults({
   const offset = ledgerEnd.data?.offset
   const queryClient = useQueryClient()
   const [localContracts, setLocalContracts] = useState<ActiveContract[] | null>(null)
+  const [prevTemplateId, setPrevTemplateId] = useState(templateId)
+  // Clear local WS results when template changes
+  if (templateId !== prevTemplateId) {
+    setPrevTemplateId(templateId)
+    setLocalContracts(null)
+  }
   const limitError = !!(contracts.error && (contracts.error as { isLimitError?: boolean }).isLimitError)
   const cachedContracts = queryClient.getQueryData<ActiveContract[]>(['ws-contracts', node.id, templateId])
 
@@ -502,6 +508,11 @@ function InterfaceQueryResults({
   const offset = ledgerEnd.data?.offset
   const queryClient = useQueryClient()
   const [localContracts, setLocalContracts] = useState<ActiveContract[] | null>(null)
+  const [prevInterfaceId, setPrevInterfaceId] = useState(interfaceId)
+  if (interfaceId !== prevInterfaceId) {
+    setPrevInterfaceId(interfaceId)
+    setLocalContracts(null)
+  }
   const limitError = !!(contracts.error && (contracts.error as { isLimitError?: boolean }).isLimitError)
   const cacheKey = `iface-${interfaceId}`
   const cachedContracts = queryClient.getQueryData<ActiveContract[]>(['ws-contracts', node.id, cacheKey])
