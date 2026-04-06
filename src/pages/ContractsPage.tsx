@@ -279,51 +279,41 @@ function TemplateQueryTab() {
   )
 }
 
-interface BalanceEntry {
-  total: string
-  unit: string
-  count: number
-}
-
-/** Compute total balances for Amulet and Holding templates.
- *  Holdings are grouped by instrument.id since a party can hold multiple token types. */
-function computeBalances(contracts: ActiveContract[], templateId: string): BalanceEntry[] {
-  const entity = templateId.split(':').pop() ?? ''
-  if (entity !== 'Amulet' && entity !== 'Holding') return []
-
-  if (entity === 'Amulet') {
-    let sum = 0
-    let count = 0
-    for (const c of contracts) {
-      const args = c?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
-      const amount = args?.amount as Record<string, unknown> | undefined
-      const val = amount?.initialAmount as string | undefined
-      if (val) { sum += parseFloat(val); count++ }
-    }
-    if (sum === 0) return []
-    return [{ total: formatAmount(sum), unit: 'CC', count }]
-  }
-
-  // Holding: group by instrument.id
-  const groups: Record<string, { sum: number; count: number }> = {}
-  for (const c of contracts) {
-    const args = c?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
-    if (!args) continue
-    const val = args.amount as string | undefined
-    const instrument = args.instrument as Record<string, unknown> | undefined
-    const instrumentId = (instrument?.id as string) || 'unknown'
-    if (!groups[instrumentId]) groups[instrumentId] = { sum: 0, count: 0 }
-    if (val) { groups[instrumentId].sum += parseFloat(val); groups[instrumentId].count++ }
-  }
-
-  return Object.entries(groups)
-    .filter(([, g]) => g.sum > 0)
-    .sort((a, b) => b[1].sum - a[1].sum)
-    .map(([unit, g]) => ({ total: formatAmount(g.sum), unit, count: g.count }))
-}
-
 function formatAmount(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 10 })
+}
+
+/** Collapsible group of Holding contracts for the same instrument. */
+function HoldingGroup({ instrumentId, sum, contracts }: { instrumentId: string; sum: number; contracts: ActiveContract[] }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="rounded-lg border border-border/50 overflow-hidden">
+      <div
+        role="button"
+        tabIndex={0}
+        className="w-full text-left p-3 hover:bg-muted/30 transition-colors flex items-center justify-between cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(!expanded) } }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          {expanded ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+          <span className="text-sm font-semibold">{instrumentId}</span>
+          <Badge variant="outline" className="text-[10px]">{contracts.length} contract(s)</Badge>
+        </div>
+        <Badge variant="secondary" className="text-xs font-mono shrink-0">
+          {formatAmount(sum)} {instrumentId}
+        </Badge>
+      </div>
+      {expanded && (
+        <div className="border-t border-border/50 p-2 space-y-2 bg-muted/10">
+          {contracts.map((c, i) => (
+            <ContractCard key={i} contract={c} defaultExpanded={contracts.length === 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** Results view with LoadAll support for >200 contracts */
@@ -367,8 +357,38 @@ function TemplateQueryResults({
   const data = localContracts ?? cachedContracts ?? (contracts.data as ActiveContract[] | null)
   if (!data) return null
 
-  // Calculate total balances for Amulet and Holding templates
-  const balances = computeBalances(data, templateId)
+  const entity = templateId.split(':').pop() ?? ''
+  const isHolding = entity === 'Holding'
+  const isAmulet = entity === 'Amulet'
+
+  // Group by instrument for Holdings
+  const groups = useMemo(() => {
+    if (!isHolding || data.length === 0) return null
+    const map: Record<string, { sum: number; contracts: ActiveContract[] }> = {}
+    for (const c of data) {
+      const args = c?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
+      const instrument = args?.instrument as Record<string, unknown> | undefined
+      const instrumentId = (instrument?.id as string) || 'unknown'
+      if (!map[instrumentId]) map[instrumentId] = { sum: 0, contracts: [] }
+      map[instrumentId].contracts.push(c)
+      const val = args?.amount as string | undefined
+      if (val) map[instrumentId].sum += parseFloat(val)
+    }
+    return Object.entries(map).sort((a, b) => b[1].sum - a[1].sum)
+  }, [data, isHolding])
+
+  // Amulet total
+  const amuletTotal = useMemo(() => {
+    if (!isAmulet || data.length === 0) return null
+    let sum = 0
+    for (const c of data) {
+      const args = c?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
+      const amount = args?.amount as Record<string, unknown> | undefined
+      const val = amount?.initialAmount as string | undefined
+      if (val) sum += parseFloat(val)
+    }
+    return sum > 0 ? formatAmount(sum) : null
+  }, [data, isAmulet])
 
   return (
     <Card>
@@ -376,16 +396,20 @@ function TemplateQueryResults({
         <CardTitle className="text-sm">Results</CardTitle>
         <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span>{data.length.toLocaleString()} active contract(s)</span>
-          {balances.map((b) => (
-            <Badge key={b.unit} variant="secondary" className="text-xs font-mono">
-              {b.total} {b.unit} ({b.count})
+          {amuletTotal && (
+            <Badge variant="secondary" className="text-xs font-mono">
+              Total: {amuletTotal} CC
             </Badge>
-          ))}
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-2 max-h-[80vh] overflow-y-auto">
-        {data.length > 0 ? (
+        {groups ? (
+          groups.map(([instrumentId, group]) => (
+            <HoldingGroup key={instrumentId} instrumentId={instrumentId} sum={group.sum} contracts={group.contracts} />
+          ))
+        ) : data.length > 0 ? (
           data.map((c, i) => (
             <ContractCard key={i} contract={c} defaultExpanded={data.length === 1} />
           ))
@@ -447,25 +471,77 @@ function InterfaceQueryTab() {
       </Card>
 
       {contracts.isLoading && <LoadingSpinner text="Querying contracts..." className="py-8" />}
-      {contracts.error && <ErrorDisplay error={contracts.error as Error} />}
-      {contracts.data && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Results</CardTitle>
-            <CardDescription>{(contracts.data as unknown[]).length} active contract(s)</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {(contracts.data as ActiveContract[]).length > 0 ? (
-              (contracts.data as ActiveContract[]).map((c, i) => (
-                <ContractCard key={i} contract={c} defaultExpanded={(contracts.data as ActiveContract[]).length === 1} />
-              ))
-            ) : (
-              <EmptyState icon={Layers} title="No contracts found" description="No active contracts implement this interface" />
-            )}
-          </CardContent>
-        </Card>
+      {contracts.error && !(contracts.error as { isLimitError?: boolean }).isLimitError && (
+        <ErrorDisplay error={contracts.error as Error} />
       )}
+      <InterfaceQueryResults
+        contracts={contracts}
+        partyId={partyId}
+        interfaceId={interfaceId}
+      />
     </div>
+  )
+}
+
+/** Results view for Interface queries — with LoadAll for >200 contracts */
+function InterfaceQueryResults({
+  contracts,
+  partyId,
+  interfaceId,
+}: {
+  contracts: { data: unknown; error: unknown; isLoading: boolean }
+  partyId: string
+  interfaceId: string
+}) {
+  const node = useNodeConfig()
+  const ledgerEnd = useLedgerEnd()
+  const offset = ledgerEnd.data?.offset
+  const queryClient = useQueryClient()
+  const [localContracts, setLocalContracts] = useState<ActiveContract[] | null>(null)
+  const limitError = !!(contracts.error && (contracts.error as { isLimitError?: boolean }).isLimitError)
+  const cacheKey = `iface-${interfaceId}`
+  const cachedContracts = queryClient.getQueryData<ActiveContract[]>(['ws-contracts', node.id, cacheKey])
+
+  if (limitError && !cachedContracts && !localContracts) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Results</CardTitle>
+          <CardDescription className="flex items-center gap-2">
+            200+ active contracts — exceeds HTTP limit
+            <LoadAllButton
+              partyId={partyId}
+              templateId={interfaceId}
+              activeAtOffset={offset}
+              onLoaded={(c) => setLocalContracts(c)}
+            />
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+
+  const data = localContracts ?? cachedContracts ?? (contracts.data as ActiveContract[] | null)
+  if (!data) return null
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm">Results</CardTitle>
+        <CardDescription>{data.length.toLocaleString()} active contract(s)</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2 max-h-[80vh] overflow-y-auto">
+          {data.length > 0 ? (
+            data.map((c, i) => (
+              <ContractCard key={i} contract={c} defaultExpanded={data.length === 1} />
+            ))
+          ) : (
+            <EmptyState icon={Layers} title="No contracts found" description="No active contracts implement this interface" />
+          )}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
