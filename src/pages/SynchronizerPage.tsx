@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Globe, Shield, Users, FileCode, Layers, ChevronDown, ChevronUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -35,6 +35,14 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [templateSearch, setTemplateSearch] = useState('')
   const queryClient = useQueryClient()
+  const resultsRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll to results when a template is selected
+  useEffect(() => {
+    if (selectedName && resultsRef.current) {
+      setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+    }
+  }, [selectedName])
 
   const [showAllTemplates, setShowAllTemplates] = useState(false)
 
@@ -136,6 +144,7 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
       )}
 
       {/* Selected template detail view */}
+      <div ref={resultsRef} />
       {selected && <SelectedTemplateView
         key={selected.shortName}
         partyId={partyId}
@@ -217,9 +226,9 @@ function SelectedTemplateView({
                   if (!evt) return null
                   return (
                     <div key={i} className="rounded-lg border border-border/50 overflow-hidden">
-                      <div className="flex items-center justify-between p-3 bg-muted/30">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-3 bg-muted/30">
                         <IdDisplay id={evt.contractId as string} truncate={16} label="Contract" />
-                        <Badge variant="outline" className="text-xs font-mono">
+                        <Badge variant="outline" className="text-xs font-mono shrink-0">
                           {(evt.templateId as string)?.split(':').pop() ?? 'Unknown'}
                         </Badge>
                       </div>

@@ -131,7 +131,7 @@ function ContractCard({ contract, defaultExpanded }: { contract: ActiveContract;
       <div
         role="button"
         tabIndex={0}
-        className="w-full text-left p-3 hover:bg-muted/30 transition-colors flex items-center justify-between cursor-pointer"
+        className="w-full text-left p-3 hover:bg-muted/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-1 cursor-pointer"
         onClick={() => setExpanded(!expanded)}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(!expanded) } }}
       >
