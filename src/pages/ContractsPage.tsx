@@ -279,38 +279,51 @@ function TemplateQueryTab() {
   )
 }
 
-/** Compute total balance for Amulet (ExpiringAmount) and Holding (flat amount) templates. */
-function computeBalance(contracts: ActiveContract[], templateId: string): { total: string; unit: string } | null {
+interface BalanceEntry {
+  total: string
+  unit: string
+  count: number
+}
+
+/** Compute total balances for Amulet and Holding templates.
+ *  Holdings are grouped by instrument.id since a party can hold multiple token types. */
+function computeBalances(contracts: ActiveContract[], templateId: string): BalanceEntry[] {
   const entity = templateId.split(':').pop() ?? ''
-  // Only compute for known balance-bearing templates
-  if (entity !== 'Amulet' && entity !== 'Holding') return null
+  if (entity !== 'Amulet' && entity !== 'Holding') return []
 
-  let sum = 0
-  let unit = entity === 'Amulet' ? 'CC' : ''
+  if (entity === 'Amulet') {
+    let sum = 0
+    let count = 0
+    for (const c of contracts) {
+      const args = c?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
+      const amount = args?.amount as Record<string, unknown> | undefined
+      const val = amount?.initialAmount as string | undefined
+      if (val) { sum += parseFloat(val); count++ }
+    }
+    if (sum === 0) return []
+    return [{ total: formatAmount(sum), unit: 'CC', count }]
+  }
 
+  // Holding: group by instrument.id
+  const groups: Record<string, { sum: number; count: number }> = {}
   for (const c of contracts) {
     const args = c?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
     if (!args) continue
-
-    if (entity === 'Amulet') {
-      // Amulet: amount.initialAmount (ExpiringAmount structure)
-      const amount = args.amount as Record<string, unknown> | undefined
-      const val = amount?.initialAmount as string | undefined
-      if (val) sum += parseFloat(val)
-    } else if (entity === 'Holding') {
-      // Holding: amount (flat string)
-      const val = args.amount as string | undefined
-      if (val) sum += parseFloat(val)
-      // Try to extract token name from instrument or other fields
-      if (!unit) {
-        const instrument = args.instrument as Record<string, unknown> | undefined
-        unit = (instrument?.id as string) || 'tokens'
-      }
-    }
+    const val = args.amount as string | undefined
+    const instrument = args.instrument as Record<string, unknown> | undefined
+    const instrumentId = (instrument?.id as string) || 'unknown'
+    if (!groups[instrumentId]) groups[instrumentId] = { sum: 0, count: 0 }
+    if (val) { groups[instrumentId].sum += parseFloat(val); groups[instrumentId].count++ }
   }
 
-  if (sum === 0) return null
-  return { total: sum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 10 }), unit }
+  return Object.entries(groups)
+    .filter(([, g]) => g.sum > 0)
+    .sort((a, b) => b[1].sum - a[1].sum)
+    .map(([unit, g]) => ({ total: formatAmount(g.sum), unit, count: g.count }))
+}
+
+function formatAmount(n: number): string {
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 10 })
 }
 
 /** Results view with LoadAll support for >200 contracts */
@@ -354,20 +367,20 @@ function TemplateQueryResults({
   const data = localContracts ?? cachedContracts ?? (contracts.data as ActiveContract[] | null)
   if (!data) return null
 
-  // Calculate total balance for Amulet and Holding templates
-  const balance = computeBalance(data, templateId)
+  // Calculate total balances for Amulet and Holding templates
+  const balances = computeBalances(data, templateId)
 
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm">Results</CardTitle>
-        <CardDescription className="flex flex-wrap items-center gap-2">
+        <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span>{data.length.toLocaleString()} active contract(s)</span>
-          {balance && (
-            <Badge variant="secondary" className="text-xs font-mono">
-              Total: {balance.total} {balance.unit}
+          {balances.map((b) => (
+            <Badge key={b.unit} variant="secondary" className="text-xs font-mono">
+              {b.total} {b.unit} ({b.count})
             </Badge>
-          )}
+          ))}
         </CardDescription>
       </CardHeader>
       <CardContent>
