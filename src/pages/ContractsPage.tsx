@@ -17,6 +17,7 @@ import { ClearableInput } from '@/components/common/ClearableInput'
 import { AutocompleteInput, type AutocompleteOption } from '@/components/common/AutocompleteInput'
 import { IdDisplay } from '@/components/common/IdDisplay'
 import { CopyButton } from '@/components/common/CopyButton'
+import { ExportButton } from '@/components/common/ExportButton'
 import { LoadAllButton } from '@/components/common/LoadAllButton'
 import { JsonViewer } from '@/components/common/JsonViewer'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
@@ -546,15 +547,20 @@ function TemplateQueryResults({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm">Results</CardTitle>
-        <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span>{data.length.toLocaleString()} active contract(s)</span>
-          {ccTotal && (
-            <Badge variant="secondary" className="text-xs font-mono">
-              Total: {ccTotal} {balanceInfo.extractor?.unit || 'CC'}
-            </Badge>
-          )}
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-sm">Results</CardTitle>
+            <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+              <span>{data.length.toLocaleString()} active contract(s)</span>
+              {ccTotal && (
+                <Badge variant="secondary" className="text-xs font-mono">
+                  Total: {ccTotal} {balanceInfo.extractor?.unit || 'CC'}
+                </Badge>
+              )}
+            </CardDescription>
+          </div>
+          <ExportButton contracts={data} filename={`contracts-${templateId.split(':').pop() || 'export'}`} />
+        </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-2 max-h-[80vh] overflow-y-auto">
@@ -720,15 +726,20 @@ function InterfaceQueryResults({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm">Results</CardTitle>
-        <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span>{data.length.toLocaleString()} active contract(s)</span>
-          {ccTotal && (
-            <Badge variant="secondary" className="text-xs font-mono">
-              Total: {ccTotal} {balanceInfo.extractor?.unit || 'CC'}
-            </Badge>
-          )}
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-sm">Results</CardTitle>
+            <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+              <span>{data.length.toLocaleString()} active contract(s)</span>
+              {ccTotal && (
+                <Badge variant="secondary" className="text-xs font-mono">
+                  Total: {ccTotal} {balanceInfo.extractor?.unit || 'CC'}
+                </Badge>
+              )}
+            </CardDescription>
+          </div>
+          <ExportButton contracts={data} filename={`contracts-${interfaceId.split(':').pop() || 'export'}`} />
+        </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-2 max-h-[80vh] overflow-y-auto">
