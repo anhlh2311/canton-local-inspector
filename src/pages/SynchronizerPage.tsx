@@ -228,7 +228,7 @@ function SelectedTemplateView({
                     <div key={i} className="rounded-lg border border-border/50 overflow-hidden">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-3 bg-muted/30">
                         <IdDisplay id={evt.contractId as string} truncate={16} label="Contract" />
-                        <Badge variant="outline" className="text-xs font-mono shrink-0">
+                        <Badge variant="outline" className="text-xs font-mono shrink-0 w-fit self-start sm:self-auto">
                           {(evt.templateId as string)?.split(':').pop() ?? 'Unknown'}
                         </Badge>
                       </div>
