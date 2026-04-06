@@ -355,15 +355,14 @@ function TemplateQueryResults({
   }
 
   const data = localContracts ?? cachedContracts ?? (contracts.data as ActiveContract[] | null)
-  if (!data) return null
 
   const entity = templateId.split(':').pop() ?? ''
   const isHolding = entity === 'Holding'
   const isAmulet = entity === 'Amulet'
 
-  // Group by instrument for Holdings
+  // Group by instrument for Holdings (hooks must be called unconditionally)
   const groups = useMemo(() => {
-    if (!isHolding || data.length === 0) return null
+    if (!isHolding || !data || data.length === 0) return null
     const map: Record<string, { sum: number; contracts: ActiveContract[] }> = {}
     for (const c of data) {
       const args = c?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
@@ -379,7 +378,7 @@ function TemplateQueryResults({
 
   // Amulet total
   const amuletTotal = useMemo(() => {
-    if (!isAmulet || data.length === 0) return null
+    if (!isAmulet || !data || data.length === 0) return null
     let sum = 0
     for (const c of data) {
       const args = c?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
@@ -389,6 +388,8 @@ function TemplateQueryResults({
     }
     return sum > 0 ? formatAmount(sum) : null
   }, [data, isAmulet])
+
+  if (!data) return null
 
   return (
     <Card>
