@@ -753,7 +753,7 @@ function ContractIdTab() {
   const node = useNodeConfig()
   const [contractId, setContractId] = useState('')
   const [searching, setSearching] = useState(false)
-  const [result, setResult] = useState<{ events: unknown; created: unknown } | null>(null)
+  const [result, setResult] = useState<{ data: Record<string, unknown>; createdEvent: Record<string, unknown> | null } | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [searched, setSearched] = useState(false)
 
@@ -768,11 +768,10 @@ function ContractIdTab() {
 
     try {
       const token = await getAuthToken(node)
-      const data = await getEventsByContractId(node, token, cid)
-      // Extract the created event from the response
-      const events = data as Record<string, unknown>
-      const createEvent = events?.createEvent as Record<string, unknown> | undefined
-      setResult({ events: data, created: createEvent ?? null })
+      const data = await getEventsByContractId(node, token, cid) as Record<string, unknown>
+      // Response: { created: { createdEvent: {...} }, archived: ... }
+      const created = data?.created as Record<string, unknown> | undefined
+      setResult({ data, createdEvent: created?.createdEvent as Record<string, unknown> | null ?? null })
       setSearched(true)
     } catch (err) {
       const axiosErr = err as { response?: { status?: number; data?: unknown } }
@@ -815,18 +814,42 @@ function ContractIdTab() {
 
       {searchError && <ErrorDisplay error={searchError} />}
 
-      {result?.created != null && (
+      {result?.createdEvent && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Contract Events</CardTitle>
+            <CardTitle className="text-sm">Contract Found</CardTitle>
+            <CardDescription className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="text-[10px] font-mono">
+                {(result.createdEvent.templateId as string)?.split(':').pop() ?? 'Unknown'}
+              </Badge>
+              {typeof result.createdEvent.packageName === 'string' && (
+                <Badge variant="outline" className="text-[10px]">
+                  {result.createdEvent.packageName as string}
+                </Badge>
+              )}
+              {result.data.archived != null ? (
+                <Badge variant="destructive" className="text-[10px]">Archived</Badge>
+              ) : (
+                <Badge variant="success" className="text-[10px]">Active</Badge>
+              )}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <JsonViewer data={result.events} />
+            <div>
+              <p className="text-[10px] text-muted-foreground mb-1">Create Argument</p>
+              <JsonViewer data={result.createdEvent.createArgument} />
+            </div>
+            {result.data.archived != null && (
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-1">Archive Event</p>
+                <JsonViewer data={result.data.archived} />
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
-      {searched && !result?.created && !searchError && (
+      {searched && !result?.createdEvent && !searchError && (
         <EmptyState icon={Hash} title="Contract not found" description={`No events found for contract ID "${contractId.slice(0, 20)}..."`} />
       )}
     </div>
