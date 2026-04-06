@@ -102,7 +102,7 @@ export function ExportButton({ contracts, filename = 'contracts' }: ExportButton
           <SelectItem value="csv">CSV</SelectItem>
         </SelectContent>
       </Select>
-      <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleExport}>
+      <Button size="sm" className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleExport}>
         <Download className="h-3 w-3" />
         Export
       </Button>
