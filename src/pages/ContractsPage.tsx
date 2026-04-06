@@ -514,6 +514,7 @@ function InterfaceQueryResults({
               partyId={partyId}
               templateId={interfaceId}
               activeAtOffset={offset}
+              filterType="interface"
               onLoaded={(c) => setLocalContracts(c)}
             />
           </CardDescription>

@@ -3,7 +3,7 @@ import { Download, X, Loader2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useQueryClient } from '@tanstack/react-query'
-import { streamActiveContractsWs, getAuthToken, buildTemplateFilter, buildAnyPartyTemplateFilter } from '@/api/canton'
+import { streamActiveContractsWs, getAuthToken, buildTemplateFilter, buildAnyPartyTemplateFilter, buildInterfaceFilter } from '@/api/canton'
 import { useNodeConfig } from '@/hooks/useCantonQuery'
 import type { ActiveContract, ActiveContractsRequest } from '@/types/canton'
 
@@ -19,7 +19,7 @@ export function wsContractsCacheKey(nodeId: string, templateId: string) {
 }
 
 interface LoadAllButtonProps {
-  /** Full template ID (packageHash:Module:Entity) */
+  /** Full template ID or interface ID (packageHash:Module:Entity) */
   templateId: string
   /** Ledger offset to query at */
   activeAtOffset?: string
@@ -31,9 +31,11 @@ interface LoadAllButtonProps {
   partyId?: string
   /** Approximate expected count (from discovery) — used for large stream warning */
   expectedCount?: number
+  /** Filter type: 'template' (default) or 'interface' */
+  filterType?: 'template' | 'interface'
 }
 
-export function LoadAllButton({ templateId, activeAtOffset, onLoaded, compact, partyId, expectedCount }: LoadAllButtonProps) {
+export function LoadAllButton({ templateId, activeAtOffset, onLoaded, compact, partyId, expectedCount, filterType = 'template' }: LoadAllButtonProps) {
   const node = useNodeConfig()
   const queryClient = useQueryClient()
   const [streaming, setStreaming] = useState(false)
@@ -68,9 +70,14 @@ export function LoadAllButton({ templateId, activeAtOffset, onLoaded, compact, p
 
     try {
       const token = await getAuthToken(node)
-      const filter: ActiveContractsRequest = partyId
-        ? buildTemplateFilter(partyId, templateId, activeAtOffset)
-        : buildAnyPartyTemplateFilter(templateId, activeAtOffset)
+      let filter: ActiveContractsRequest
+      if (filterType === 'interface' && partyId) {
+        filter = { ...buildInterfaceFilter(partyId, templateId), ...(activeAtOffset ? { activeAtOffset } : {}) }
+      } else if (partyId) {
+        filter = buildTemplateFilter(partyId, templateId, activeAtOffset)
+      } else {
+        filter = buildAnyPartyTemplateFilter(templateId, activeAtOffset)
+      }
 
       const { promise, cancel } = streamActiveContractsWs(node, token, filter, (count) => {
         setProgress(count)
