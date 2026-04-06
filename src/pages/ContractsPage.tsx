@@ -334,33 +334,13 @@ function TemplateQueryResults({
   const limitError = !!(contracts.error && (contracts.error as { isLimitError?: boolean }).isLimitError)
   const cachedContracts = queryClient.getQueryData<ActiveContract[]>(['ws-contracts', node.id, templateId])
 
-  // Show LoadAll for limit errors (unless cached)
-  if (limitError && !cachedContracts && !localContracts) {
-    return (
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Results</CardTitle>
-          <CardDescription className="flex items-center gap-2">
-            200+ active contracts — exceeds HTTP limit
-            <LoadAllButton
-              partyId={partyId}
-              templateId={templateId}
-              activeAtOffset={offset}
-              onLoaded={(c) => setLocalContracts(c)}
-            />
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    )
-  }
-
   const data = localContracts ?? cachedContracts ?? (contracts.data as ActiveContract[] | null)
 
   const entity = templateId.split(':').pop() ?? ''
   const isHolding = entity === 'Holding'
   const isAmulet = entity === 'Amulet'
 
-  // Group by instrument for Holdings (hooks must be called unconditionally)
+  // ALL hooks must be called before any early returns (React rules of hooks)
   const groups = useMemo(() => {
     if (!isHolding || !data || data.length === 0) return null
     const map: Record<string, { sum: number; contracts: ActiveContract[] }> = {}
@@ -388,6 +368,26 @@ function TemplateQueryResults({
     }
     return sum > 0 ? formatAmount(sum) : null
   }, [data, isAmulet])
+
+  // Show LoadAll for limit errors (after all hooks)
+  if (limitError && !cachedContracts && !localContracts) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Results</CardTitle>
+          <CardDescription className="flex items-center gap-2">
+            200+ active contracts — exceeds HTTP limit
+            <LoadAllButton
+              partyId={partyId}
+              templateId={templateId}
+              activeAtOffset={offset}
+              onLoaded={(c) => setLocalContracts(c)}
+            />
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
 
   if (!data) return null
 
