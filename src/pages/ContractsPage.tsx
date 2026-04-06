@@ -429,8 +429,11 @@ function InterfaceQueryTab() {
   const [refreshCount, setRefreshCount] = useState(0)
 
   const queryRequest = useMemo(() => {
-    if (interfaceId.trim() && partyId.trim()) {
-      return buildInterfaceFilter(partyId.trim(), interfaceId.trim())
+    const iid = interfaceId.trim()
+    const pid = partyId.trim()
+    // Interface IDs use packageHash:Module:Entity or #packageName:Module:Entity
+    if (iid && pid && iid.includes(':') && iid.split(':').length >= 3) {
+      return buildInterfaceFilter(pid, iid)
     }
     return null
   }, [interfaceId, partyId])
