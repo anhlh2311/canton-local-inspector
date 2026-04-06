@@ -279,6 +279,40 @@ function TemplateQueryTab() {
   )
 }
 
+/** Compute total balance for Amulet (ExpiringAmount) and Holding (flat amount) templates. */
+function computeBalance(contracts: ActiveContract[], templateId: string): { total: string; unit: string } | null {
+  const entity = templateId.split(':').pop() ?? ''
+  // Only compute for known balance-bearing templates
+  if (entity !== 'Amulet' && entity !== 'Holding') return null
+
+  let sum = 0
+  let unit = entity === 'Amulet' ? 'CC' : ''
+
+  for (const c of contracts) {
+    const args = c?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
+    if (!args) continue
+
+    if (entity === 'Amulet') {
+      // Amulet: amount.initialAmount (ExpiringAmount structure)
+      const amount = args.amount as Record<string, unknown> | undefined
+      const val = amount?.initialAmount as string | undefined
+      if (val) sum += parseFloat(val)
+    } else if (entity === 'Holding') {
+      // Holding: amount (flat string)
+      const val = args.amount as string | undefined
+      if (val) sum += parseFloat(val)
+      // Try to extract token name from instrument or other fields
+      if (!unit) {
+        const instrument = args.instrument as Record<string, unknown> | undefined
+        unit = (instrument?.id as string) || 'tokens'
+      }
+    }
+  }
+
+  if (sum === 0) return null
+  return { total: sum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 10 }), unit }
+}
+
 /** Results view with LoadAll support for >200 contracts */
 function TemplateQueryResults({
   contracts,
@@ -320,11 +354,21 @@ function TemplateQueryResults({
   const data = localContracts ?? cachedContracts ?? (contracts.data as ActiveContract[] | null)
   if (!data) return null
 
+  // Calculate total balance for Amulet and Holding templates
+  const balance = computeBalance(data, templateId)
+
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm">Results</CardTitle>
-        <CardDescription>{data.length.toLocaleString()} active contract(s)</CardDescription>
+        <CardDescription className="flex flex-wrap items-center gap-2">
+          <span>{data.length.toLocaleString()} active contract(s)</span>
+          {balance && (
+            <Badge variant="secondary" className="text-xs font-mono">
+              Total: {balance.total} {balance.unit}
+            </Badge>
+          )}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-2 max-h-[80vh] overflow-y-auto">
