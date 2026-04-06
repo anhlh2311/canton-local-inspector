@@ -732,16 +732,18 @@ function ContractIdTab() {
   const [partyId, setPartyId] = useState('')
   const [refreshCount, setRefreshCount] = useState(0)
 
+  // Only query when contract ID is provided — don't load all contracts just to filter client-side
   const queryRequest = useMemo(() => {
     const tid = templateId.trim()
     const pid = partyId.trim()
-    if (tid && pid && isValidTemplateId(tid)) {
+    const cid = contractId.trim()
+    if (tid && pid && cid && isValidTemplateId(tid)) {
       return buildTemplateFilter(pid, tid)
     }
     return null
-  }, [templateId, partyId])
+  }, [templateId, partyId, contractId])
 
-  const contracts = useActiveContracts(queryRequest, `cid-${templateId}-${refreshCount}`)
+  const contracts = useActiveContracts(queryRequest, `cid-${templateId}-${contractId}-${refreshCount}`)
   const partyOptions = usePartyOptions()
   const templateOpts = useTemplateOptions(partyId || undefined)
 
@@ -760,7 +762,7 @@ function ContractIdTab() {
       <Card>
         <CardContent className="p-4 space-y-3">
           <p className="text-xs text-muted-foreground">
-            Select a party and template to load contracts, then optionally filter by contract ID.
+            Select a party and template, then enter a contract ID to find a specific contract.
           </p>
           <div className="grid grid-cols-1 gap-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -785,7 +787,7 @@ function ContractIdTab() {
               </div>
             </div>
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Contract ID (optional filter)</label>
+              <label className="text-xs text-muted-foreground mb-1 block">Contract ID</label>
               <ClearableInput placeholder="Contract ID to find..." value={contractId} onChange={setContractId} />
             </div>
           </div>
@@ -798,10 +800,18 @@ function ContractIdTab() {
         </CardContent>
       </Card>
 
-      {contracts.isLoading && <LoadingSpinner text="Searching..." className="py-8" />}
-      {contracts.error && <ErrorDisplay error={contracts.error as Error} />}
+      {contracts.isLoading && <LoadingSpinner text="Searching for contract..." className="py-8" />}
+      {contracts.error && !(contracts.error as { isLimitError?: boolean }).isLimitError && (
+        <ErrorDisplay error={contracts.error as Error} />
+      )}
+      {(contracts.error as { isLimitError?: boolean })?.isLimitError && (
+        <div className="rounded-md bg-muted/50 p-4 text-sm text-muted-foreground">
+          This template has too many contracts to search by ID via HTTP.
+          The contract ID was not found in the first 200 results. Try using the "By Template" tab with the "Load All" button to stream all contracts.
+        </div>
+      )}
 
-      {contracts.data && contractId.trim() && matchedContract && (
+      {matchedContract && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm">Found Contract</CardTitle>
@@ -812,22 +822,8 @@ function ContractIdTab() {
         </Card>
       )}
 
-      {contracts.data && contractId.trim() && !matchedContract && (
-        <EmptyState icon={Hash} title="Contract not found" description={`No contract with ID "${contractId.slice(0, 20)}..." found in active contracts`} />
-      )}
-
-      {contracts.data && !contractId.trim() && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">All Active Contracts</CardTitle>
-            <CardDescription>{(contracts.data as unknown[]).length} contract(s) — enter a contract ID above to filter</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {(contracts.data as ActiveContract[]).map((c, i) => (
-              <ContractCard key={i} contract={c} />
-            ))}
-          </CardContent>
-        </Card>
+      {contracts.data && !matchedContract && contractId.trim() && (
+        <EmptyState icon={Hash} title="Contract not found" description={`No contract with ID "${contractId.slice(0, 20)}..." found in the first ${(contracts.data as ActiveContract[]).length} active contracts of this template`} />
       )}
     </div>
   )
