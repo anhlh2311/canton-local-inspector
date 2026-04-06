@@ -8,7 +8,7 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 - **Synchronizer & DSO** — Global synchronizer details, DSO party ID, dynamically discovered active contracts with JSON payload viewer, responsive multi-column party grid with expand/collapse
 - **Parties Explorer** — Three tabs: **Users** (local users from `/v2/users`, fast default), **Network Parties** (all parties from `/v2/parties`, paginated 200/page, opt-in for large networks), and **Party Lookup** (check specific party existence by ID). Local/Remote badges, rights, annotations.
 - **Package Manager** — List installed packages with auto-discovered names, templates, and active contract counts per package
-- **Contract Explorer** — Query active contracts by template, interface, or contract ID. Grouped template dropdown by package. "Load All" button streams contracts via WebSocket when HTTP 200 limit is hit. Progress tracking, cancel support, and 5-minute cooldown.
+- **Contract Explorer** — Query active contracts by template, interface, or contract ID. Grouped template dropdown by package. "Load All" button streams contracts via WebSocket when HTTP 200 limit is hit. Progress tracking, cancel support, and 5-minute cooldown. Balance calculation for Amulet/LockedAmulet (CC totals) and Holdings (grouped by instrument). CSV/JSON export for search results. Contract ID lookup via dedicated `events-by-contract-id` endpoint (no party/template needed).
 - **Settings** — Configure local and remote node connections with per-node auth (shared-secret or OAuth2), network selector (local/devnet/testnet/mainnet), auto-refresh intervals, custom colors. Template index status with manual refresh and cooldown protection.
 - **Dark/Light Theme** — Toggle between dark and light modes with instant switching
 
@@ -188,6 +188,7 @@ Individual contract queries use HTTP first. If a template exceeds the 200 limit 
 | `/v2/parties/party?parties=X` | GET | Look up specific party by ID |
 | `/v2/parties/participant-id` | GET | Get participant namespace |
 | `/v2/packages` | GET | List installed package IDs |
+| `/v2/events/events-by-contract-id` | POST | Look up contract events by contract ID |
 
 ### Validator API (Scan Proxy)
 

@@ -20,6 +20,7 @@ Endpoints used on Canton participant nodes.
 | `/v2/parties/participant-id` | GET | Get participant namespace fingerprint |
 | `/v2/packages` | GET | List installed package IDs |
 | `/v2/packages/{id}/status` | GET | Check package registration status |
+| `/v2/events/events-by-contract-id` | POST | Look up contract create/archive events by contract ID |
 
 ## Validator / Scan Proxy Endpoints
 
@@ -82,6 +83,7 @@ Exported from `src/api/canton.ts`.
 | -------- | ---------- | ------- | ----------- |
 | `getActiveContracts` | `node, token, request` | `ActiveContractsResponse` | HTTP query (200 limit, throws isLimitError) |
 | `streamActiveContractsWs` | `node, token, request, onProgress?` | `{promise, cancel}` | WebSocket stream (no limit) |
+| `getEventsByContractId` | `node, token, contractId` | `unknown` | Look up contract events by ID (no party/template needed) |
 | `discoverAllContracts` | `node, token, partyId` | `ActiveContract[]` | Multi-strategy discovery |
 
 ### Authentication
