@@ -283,6 +283,131 @@ function formatAmount(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 10 })
 }
 
+// ---- Balance calculation dictionary ----
+// Defines how to extract amounts and group contracts for balance-bearing templates and interfaces.
+
+type BalanceType = 'cc' | 'holding' | 'none'
+
+interface BalanceExtractor {
+  type: BalanceType
+  /** Extract the numeric amount from a contract's createArgument */
+  getAmount: (args: Record<string, unknown>) => number | null
+  /** Extract the grouping key (instrument ID) for holding-type contracts */
+  getGroupKey?: (args: Record<string, unknown>) => string
+  /** Unit label for CC-type balances */
+  unit?: string
+}
+
+/** Get amount from a nested path like "amount.initialAmount" or "amulet.amount.initialAmount" */
+function getNestedAmount(args: Record<string, unknown>, ...path: string[]): number | null {
+  let obj: unknown = args
+  for (const key of path) {
+    if (!obj || typeof obj !== 'object') return null
+    obj = (obj as Record<string, unknown>)[key]
+  }
+  return typeof obj === 'string' ? parseFloat(obj) : null
+}
+
+function getInstrumentId(args: Record<string, unknown>): string {
+  const instrument = args?.instrument as Record<string, unknown> | undefined
+  return (instrument?.id as string) || 'unknown'
+}
+
+/** Known templates that support balance calculation.
+ *  Key: entity name (last part of templateId after the last colon). */
+const TEMPLATE_BALANCE_CONFIG: Record<string, BalanceExtractor> = {
+  // Splice Amulet (CC token)
+  'Amulet': {
+    type: 'cc',
+    unit: 'CC',
+    getAmount: (args) => getNestedAmount(args, 'amount', 'initialAmount'),
+  },
+  // Splice LockedAmulet (locked CC)
+  'LockedAmulet': {
+    type: 'cc',
+    unit: 'CC',
+    getAmount: (args) => getNestedAmount(args, 'amulet', 'amount', 'initialAmount'),
+  },
+  // Splice AmuletAllocation
+  'AmuletAllocation': {
+    type: 'cc',
+    unit: 'CC',
+    getAmount: (args) => getNestedAmount(args, 'amulet', 'amount', 'initialAmount'),
+  },
+  // Utility Registry Holding (multi-token: CBTC, USDTEST, etc.)
+  'Holding': {
+    type: 'holding',
+    getAmount: (args) => typeof args?.amount === 'string' ? parseFloat(args.amount as string) : null,
+    getGroupKey: getInstrumentId,
+  },
+}
+
+/** Known interfaces that support balance calculation.
+ *  Key: qualified interface name (Module:Entity part, after packageHash:). */
+const INTERFACE_BALANCE_CONFIG: Record<string, BalanceExtractor> = {
+  // Splice Token Holding interface
+  'Splice.Api.Token.HoldingV1:Holding': {
+    type: 'holding',
+    getAmount: (args) => typeof args?.amount === 'string' ? parseFloat(args.amount as string) : null,
+    getGroupKey: getInstrumentId,
+  },
+  // Splice Token Allocation interface
+  'Splice.Api.Token.AllocationV1:Allocation': {
+    type: 'cc',
+    unit: 'CC',
+    getAmount: (args) => getNestedAmount(args, 'amulet', 'amount', 'initialAmount'),
+  },
+}
+
+/** Find the balance extractor for a given template or interface ID. */
+function getBalanceExtractor(id: string): BalanceExtractor | null {
+  // Check by entity name (template queries)
+  const entity = id.split(':').pop() ?? ''
+  if (TEMPLATE_BALANCE_CONFIG[entity]) return TEMPLATE_BALANCE_CONFIG[entity]
+
+  // Check by Module:Entity (interface queries — strip packageHash prefix)
+  const parts = id.split(':')
+  if (parts.length >= 3) {
+    const moduleEntity = parts.slice(1).join(':')
+    if (INTERFACE_BALANCE_CONFIG[moduleEntity]) return INTERFACE_BALANCE_CONFIG[moduleEntity]
+    // Also try with # prefix stripped (e.g., #splice-api-token-holding-v1:Splice.Api.Token.HoldingV1:Holding)
+    const hashParts = id.startsWith('#') ? id.slice(1).split(':') : null
+    if (hashParts && hashParts.length >= 3) {
+      const hashModuleEntity = hashParts.slice(1).join(':')
+      if (INTERFACE_BALANCE_CONFIG[hashModuleEntity]) return INTERFACE_BALANCE_CONFIG[hashModuleEntity]
+    }
+  }
+
+  return null
+}
+
+/** Detect balance type from the ID and optionally from contract data structure. */
+function detectBalanceType(data: ActiveContract[] | null, id: string): { type: BalanceType; extractor: BalanceExtractor | null } {
+  const extractor = getBalanceExtractor(id)
+  if (extractor) return { type: extractor.type, extractor }
+
+  // Fallback: detect from contract data structure
+  if (data && data.length > 0) {
+    const args = data[0]?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
+    if (args) {
+      // Check each known extractor to see if it can extract an amount
+      for (const ext of [...Object.values(TEMPLATE_BALANCE_CONFIG), ...Object.values(INTERFACE_BALANCE_CONFIG)]) {
+        if (ext.getAmount(args) !== null) return { type: ext.type, extractor: ext }
+      }
+    }
+  }
+
+  return { type: 'none', extractor: null }
+}
+
+/** Extract CC amount using the appropriate extractor. */
+function extractCCAmount(c: ActiveContract, extractor: BalanceExtractor | null): number | null {
+  if (!extractor) return null
+  const args = c?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
+  if (!args) return null
+  return extractor.getAmount(args)
+}
+
 /** Collapsible group of Holding contracts for the same instrument. */
 function HoldingGroup({ instrumentId, sum, contracts }: { instrumentId: string; sum: number; contracts: ActiveContract[] }) {
   const [expanded, setExpanded] = useState(false)
@@ -342,38 +467,36 @@ function TemplateQueryResults({
 
   const data = localContracts ?? cachedContracts ?? (contracts.data as ActiveContract[] | null)
 
-  const entity = templateId.split(':').pop() ?? ''
-  const isHolding = entity === 'Holding'
-  const isAmulet = entity === 'Amulet'
+  // Detect balance-bearing template types
+  const balanceInfo = useMemo(() => detectBalanceType(data, templateId), [data, templateId])
 
-  // ALL hooks must be called before any early returns (React rules of hooks)
+  // Group by instrument for Holdings (hooks must be called before early returns)
   const groups = useMemo(() => {
-    if (!isHolding || !data || data.length === 0) return null
+    if (balanceInfo.type !== 'holding' || !balanceInfo.extractor || !data || data.length === 0) return null
+    const ext = balanceInfo.extractor
     const map: Record<string, { sum: number; contracts: ActiveContract[] }> = {}
     for (const c of data) {
       const args = c?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
-      const instrument = args?.instrument as Record<string, unknown> | undefined
-      const instrumentId = (instrument?.id as string) || 'unknown'
-      if (!map[instrumentId]) map[instrumentId] = { sum: 0, contracts: [] }
-      map[instrumentId].contracts.push(c)
-      const val = args?.amount as string | undefined
-      if (val) map[instrumentId].sum += parseFloat(val)
+      if (!args) continue
+      const groupKey = ext.getGroupKey ? ext.getGroupKey(args) : 'unknown'
+      if (!map[groupKey]) map[groupKey] = { sum: 0, contracts: [] }
+      map[groupKey].contracts.push(c)
+      const val = ext.getAmount(args)
+      if (val) map[groupKey].sum += val
     }
     return Object.entries(map).sort((a, b) => b[1].sum - a[1].sum)
-  }, [data, isHolding])
+  }, [data, balanceInfo])
 
-  // Amulet total
-  const amuletTotal = useMemo(() => {
-    if (!isAmulet || !data || data.length === 0) return null
+  // CC total (Amulet, LockedAmulet, AmuletAllocation, etc.)
+  const ccTotal = useMemo(() => {
+    if (balanceInfo.type !== 'cc' || !balanceInfo.extractor || !data || data.length === 0) return null
     let sum = 0
     for (const c of data) {
-      const args = c?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
-      const amount = args?.amount as Record<string, unknown> | undefined
-      const val = amount?.initialAmount as string | undefined
-      if (val) sum += parseFloat(val)
+      const val = extractCCAmount(c, balanceInfo.extractor)
+      if (val) sum += val
     }
     return sum > 0 ? formatAmount(sum) : null
-  }, [data, isAmulet])
+  }, [data, balanceInfo])
 
   // Show LoadAll for limit errors (after all hooks)
   if (limitError && !cachedContracts && !localContracts) {
@@ -403,9 +526,9 @@ function TemplateQueryResults({
         <CardTitle className="text-sm">Results</CardTitle>
         <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span>{data.length.toLocaleString()} active contract(s)</span>
-          {amuletTotal && (
+          {ccTotal && (
             <Badge variant="secondary" className="text-xs font-mono">
-              Total: {amuletTotal} CC
+              Total: {ccTotal} {balanceInfo.extractor?.unit || 'CC'}
             </Badge>
           )}
         </CardDescription>
@@ -517,6 +640,38 @@ function InterfaceQueryResults({
   const cacheKey = `iface-${interfaceId}`
   const cachedContracts = queryClient.getQueryData<ActiveContract[]>(['ws-contracts', node.id, cacheKey])
 
+  const data = localContracts ?? cachedContracts ?? (contracts.data as ActiveContract[] | null)
+
+  // Detect balance type from contract data (interface queries don't have template entity name)
+  const balanceInfo = useMemo(() => detectBalanceType(data, interfaceId), [data, interfaceId])
+
+  const groups = useMemo(() => {
+    if (balanceInfo.type !== 'holding' || !balanceInfo.extractor || !data || data.length === 0) return null
+    const ext = balanceInfo.extractor
+    const map: Record<string, { sum: number; contracts: ActiveContract[] }> = {}
+    for (const c of data) {
+      const args = c?.contractEntry?.JsActiveContract?.createdEvent?.createArgument as Record<string, unknown> | undefined
+      if (!args) continue
+      const groupKey = ext.getGroupKey ? ext.getGroupKey(args) : 'unknown'
+      if (!map[groupKey]) map[groupKey] = { sum: 0, contracts: [] }
+      map[groupKey].contracts.push(c)
+      const val = ext.getAmount(args)
+      if (val) map[groupKey].sum += val
+    }
+    return Object.entries(map).sort((a, b) => b[1].sum - a[1].sum)
+  }, [data, balanceInfo])
+
+  const ccTotal = useMemo(() => {
+    if (balanceInfo.type !== 'cc' || !balanceInfo.extractor || !data || data.length === 0) return null
+    let sum = 0
+    for (const c of data) {
+      const val = extractCCAmount(c, balanceInfo.extractor)
+      if (val) sum += val
+    }
+    return sum > 0 ? formatAmount(sum) : null
+  }, [data, balanceInfo])
+
+  // Early returns after all hooks
   if (limitError && !cachedContracts && !localContracts) {
     return (
       <Card>
@@ -537,18 +692,28 @@ function InterfaceQueryResults({
     )
   }
 
-  const data = localContracts ?? cachedContracts ?? (contracts.data as ActiveContract[] | null)
   if (!data) return null
 
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm">Results</CardTitle>
-        <CardDescription>{data.length.toLocaleString()} active contract(s)</CardDescription>
+        <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span>{data.length.toLocaleString()} active contract(s)</span>
+          {ccTotal && (
+            <Badge variant="secondary" className="text-xs font-mono">
+              Total: {ccTotal} {balanceInfo.extractor?.unit || 'CC'}
+            </Badge>
+          )}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-2 max-h-[80vh] overflow-y-auto">
-          {data.length > 0 ? (
+          {groups ? (
+            groups.map(([instrumentId, group]) => (
+              <HoldingGroup key={instrumentId} instrumentId={instrumentId} sum={group.sum} contracts={group.contracts} />
+            ))
+          ) : data.length > 0 ? (
             data.map((c, i) => (
               <ContractCard key={i} contract={c} defaultExpanded={data.length === 1} />
             ))
