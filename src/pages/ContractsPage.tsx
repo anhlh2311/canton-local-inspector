@@ -205,14 +205,20 @@ function ContractCard({ contract, defaultExpanded }: { contract: ActiveContract;
   )
 }
 
+function isValidTemplateId(id: string): boolean {
+  return id.includes(':') && id.split(':').length >= 3
+}
+
 function TemplateQueryTab() {
   const [templateId, setTemplateId] = useState('')
   const [partyId, setPartyId] = useState('')
   const [refreshCount, setRefreshCount] = useState(0)
 
   const queryRequest = useMemo(() => {
-    if (templateId.trim() && partyId.trim()) {
-      return buildTemplateFilter(partyId.trim(), templateId.trim())
+    const tid = templateId.trim()
+    const pid = partyId.trim()
+    if (tid && pid && isValidTemplateId(tid)) {
+      return buildTemplateFilter(pid, tid)
     }
     return null
   }, [templateId, partyId])
@@ -413,8 +419,10 @@ function ContractIdTab() {
   const [refreshCount, setRefreshCount] = useState(0)
 
   const queryRequest = useMemo(() => {
-    if (templateId.trim() && partyId.trim()) {
-      return buildTemplateFilter(partyId.trim(), templateId.trim())
+    const tid = templateId.trim()
+    const pid = partyId.trim()
+    if (tid && pid && isValidTemplateId(tid)) {
+      return buildTemplateFilter(pid, tid)
     }
     return null
   }, [templateId, partyId])
