@@ -766,31 +766,11 @@ async function fetchOAuth2Token(node: NodeConfig, audience: string): Promise<str
     return fetchOAuth2TokenDirect(node.auth.tokenUrl, node.auth.clientId, node.auth.clientSecret, audience)
   }
 
-  if (isVercel) {
-    // Server-owned credentials: server looks up from env vars or Redis.
-    // Client only sends nodeId + audience — no secrets in the request.
-    const res = await axios.post('/api/auth/token', { audience, nodeId: node.id })
-    return res.data.access_token
-  }
-
-  // Local dev: proxy through Vite (client has the credentials in node config)
-  const { tokenUrl, clientId, clientSecret } = node.auth
-  const urlObj = new URL(tokenUrl)
-  const origin = urlObj.origin
-  const pathname = urlObj.pathname
-  const encoded = encodeOriginBase64url(origin)
-
-  const res = await axios.post(
-    `/proxy/oauth2-token/${encoded}${pathname}`,
-    new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: clientId,
-      client_secret: clientSecret,
-      audience,
-    }).toString(),
-    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-  )
-
+  // Both Vercel and local dev: use the /api/auth/token endpoint.
+  // On Vercel: served by the serverless function (reads CANTON_NODES_AUTH from env or Redis).
+  // On local dev: served by the Vite dev server plugin (reads CANTON_NODES_AUTH from .env).
+  // Client secret never touches the browser — only nodeId and audience are sent.
+  const res = await axios.post('/api/auth/token', { audience, nodeId: node.id })
   return res.data.access_token
 }
 

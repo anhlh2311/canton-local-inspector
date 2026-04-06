@@ -2,8 +2,31 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import fs from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
+
+/** Read a specific non-VITE_ env var from .env file (server-side only, never bundled). */
+function readEnvVar(name: string): string | undefined {
+  try {
+    const envFile = fs.readFileSync(path.resolve(process.cwd(), '.env'), 'utf-8')
+    for (const line of envFile.split('\n')) {
+      const trimmed = line.trim()
+      if (trimmed.startsWith('#') || !trimmed.includes('=')) continue
+      const eqIdx = trimmed.indexOf('=')
+      const key = trimmed.slice(0, eqIdx).trim()
+      if (key === name) {
+        let val = trimmed.slice(eqIdx + 1).trim()
+        // Strip surrounding quotes
+        if ((val.startsWith("'") && val.endsWith("'")) || (val.startsWith('"') && val.endsWith('"'))) {
+          val = val.slice(1, -1)
+        }
+        return val
+      }
+    }
+  } catch { /* .env not found */ }
+  return undefined
+}
 
 // Default Canton quickstart port mappings for local proxy
 const defaultLocalNodes = [
@@ -75,6 +98,55 @@ function dynamicProxyPlugin(): Plugin {
   return {
     name: 'dynamic-proxy',
     configureServer(server) {
+      // Local dev OAuth2 token exchange — reads CANTON_NODES_AUTH from .env (server-side, never bundled)
+      server.middlewares.use((req, res, next) => {
+        if (req.url !== '/api/auth/token' || req.method !== 'POST') return next()
+
+        const chunks: Buffer[] = []
+        req.on('data', (chunk: Buffer) => chunks.push(chunk))
+        req.on('end', async () => {
+          try {
+            const body = JSON.parse(Buffer.concat(chunks).toString())
+            const { nodeId, audience } = body
+
+            // Look up credentials from CANTON_NODES_AUTH (read directly from .env, never bundled)
+            const nodesAuthRaw = readEnvVar('CANTON_NODES_AUTH')
+            if (!nodesAuthRaw) {
+              res.statusCode = 500
+              res.end(JSON.stringify({ error: 'CANTON_NODES_AUTH not configured in .env' }))
+              return
+            }
+            const configs = JSON.parse(nodesAuthRaw) as Record<string, { tokenUrl: string; clientId: string; clientSecret: string; audience: string }>
+            const creds = configs[nodeId]
+            if (!creds) {
+              res.statusCode = 500
+              res.end(JSON.stringify({ error: `No credentials for node "${nodeId}" in CANTON_NODES_AUTH` }))
+              return
+            }
+
+            const tokenRes = await fetch(creds.tokenUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: new URLSearchParams({
+                grant_type: 'client_credentials',
+                client_id: creds.clientId,
+                client_secret: creds.clientSecret,
+                audience: audience || creds.audience || '',
+              }).toString(),
+            })
+
+            const data = await tokenRes.json()
+            res.setHeader('Content-Type', 'application/json')
+            res.statusCode = tokenRes.ok ? 200 : tokenRes.status
+            res.end(JSON.stringify(data))
+          } catch (err) {
+            res.statusCode = 500
+            res.end(JSON.stringify({ error: (err as Error).message }))
+          }
+        })
+      })
+
+      // Dynamic remote proxy
       server.middlewares.use((req, res, next) => {
         if (!req.url) return next()
 
