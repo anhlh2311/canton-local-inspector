@@ -310,7 +310,29 @@ function getNestedAmount(args: Record<string, unknown>, ...path: string[]): numb
 
 function getInstrumentId(args: Record<string, unknown>): string {
   const instrument = args?.instrument as Record<string, unknown> | undefined
-  return (instrument?.id as string) || 'unknown'
+  if (instrument?.id) return instrument.id as string
+  // LockedAmulet/Amulet inside holding interfaces → group as "Amulet"
+  if (args?.amulet) return 'Amulet'
+  const amount = args?.amount as Record<string, unknown> | undefined
+  if (amount?.initialAmount) return 'Amulet'
+  return 'unknown'
+}
+
+/** Smart amount extractor that detects the contract structure:
+ *  - Flat amount string (Holding): args.amount
+ *  - Amulet ExpiringAmount: args.amount.initialAmount
+ *  - LockedAmulet/AmuletAllocation: args.amulet.amount.initialAmount */
+function getSmartAmount(args: Record<string, unknown>): number | null {
+  // Flat string amount (Holding, CBTC, USDTEST, etc.)
+  if (typeof args?.amount === 'string') return parseFloat(args.amount as string)
+  // Amulet: amount.initialAmount
+  const amount = args?.amount as Record<string, unknown> | undefined
+  if (amount?.initialAmount) return parseFloat(amount.initialAmount as string)
+  // LockedAmulet / AmuletAllocation: amulet.amount.initialAmount
+  const amulet = args?.amulet as Record<string, unknown> | undefined
+  const amuletAmount = amulet?.amount as Record<string, unknown> | undefined
+  if (amuletAmount?.initialAmount) return parseFloat(amuletAmount.initialAmount as string)
+  return null
 }
 
 /** Known templates that support balance calculation.
@@ -345,10 +367,11 @@ const TEMPLATE_BALANCE_CONFIG: Record<string, BalanceExtractor> = {
 /** Known interfaces that support balance calculation.
  *  Key: qualified interface name (Module:Entity part, after packageHash:). */
 const INTERFACE_BALANCE_CONFIG: Record<string, BalanceExtractor> = {
-  // Splice Token Holding interface
+  // Splice Token Holding interface — returns mixed types:
+  // Regular Holdings (instrument.id + flat amount), LockedAmulet (amulet.amount.initialAmount), Amulet
   'Splice.Api.Token.HoldingV1:Holding': {
     type: 'holding',
-    getAmount: (args) => typeof args?.amount === 'string' ? parseFloat(args.amount as string) : null,
+    getAmount: getSmartAmount,
     getGroupKey: getInstrumentId,
   },
   // Splice Token Allocation interface
