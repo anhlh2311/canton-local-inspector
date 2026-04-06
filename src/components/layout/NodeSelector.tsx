@@ -35,7 +35,7 @@ export function NodeSelector() {
                 >
                   {node.name}
                 </span>
-                <span className="text-muted-foreground text-xs">:{node.jsonApiPort}</span>
+                {node.jsonApiPort > 0 && <span className="text-muted-foreground text-xs">:{node.jsonApiPort}</span>}
               </div>
             </SelectItem>
           )

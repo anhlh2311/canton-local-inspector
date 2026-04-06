@@ -117,7 +117,7 @@ function NodesHealthPanel() {
                       {health.latencyMs}ms
                     </Badge>
                   )}
-                  <span>:{node.jsonApiPort}</span>
+                  {node.jsonApiPort > 0 && <span>:{node.jsonApiPort}</span>}
                 </div>
               </div>
             )
@@ -144,7 +144,7 @@ export function OverviewPage() {
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Network Overview</h2>
         <p className="text-muted-foreground text-sm mt-1">
-          Connected to <span style={{ color: node.color }} className="font-medium">{node.name}</span> on port {node.jsonApiPort}
+          Connected to <span style={{ color: node.color }} className="font-medium">{node.name}</span>{node.jsonApiPort > 0 && <> on port {node.jsonApiPort}</>}
         </p>
       </div>
 

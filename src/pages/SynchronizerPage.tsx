@@ -359,7 +359,7 @@ export function SynchronizerPage() {
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Node</p>
                   <span className="text-sm" style={{ color: node.color }}>{node.name}</span>
-                  <span className="text-xs text-muted-foreground ml-1">:{node.jsonApiPort}</span>
+                  {node.jsonApiPort > 0 && <span className="text-xs text-muted-foreground ml-1">:{node.jsonApiPort}</span>}
                 </div>
               </>
             )}
