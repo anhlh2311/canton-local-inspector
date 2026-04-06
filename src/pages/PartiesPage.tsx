@@ -347,23 +347,23 @@ export function PartiesPage() {
       {/* Participant Info */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                 <UserCheck className="h-5 w-5 text-primary" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs text-muted-foreground">Participant ID</p>
                 {participantId.isLoading ? (
                   <LoadingSpinner size={16} />
                 ) : participantId.data?.participantId ? (
-                  <IdDisplay id={participantId.data.participantId} truncate={20} />
+                  <IdDisplay id={participantId.data.participantId} truncate={14} />
                 ) : (
                   <span className="text-sm text-muted-foreground">Not available</span>
                 )}
               </div>
             </div>
-            <Badge variant="secondary">{userCount} user(s)</Badge>
+            <Badge variant="secondary" className="shrink-0">{userCount} user(s)</Badge>
           </div>
         </CardContent>
       </Card>
