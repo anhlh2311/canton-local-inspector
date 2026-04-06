@@ -324,15 +324,28 @@ function getInstrumentId(args: Record<string, unknown>): string {
  *  - Amulet ExpiringAmount: args.amount.initialAmount
  *  - LockedAmulet/AmuletAllocation: args.amulet.amount.initialAmount */
 function getSmartAmount(args: Record<string, unknown>): number | null {
-  // Flat string amount (Holding, CBTC, USDTEST, etc.)
-  if (typeof args?.amount === 'string') return parseFloat(args.amount as string)
-  // Amulet: amount.initialAmount
-  const amount = args?.amount as Record<string, unknown> | undefined
-  if (amount?.initialAmount) return parseFloat(amount.initialAmount as string)
-  // LockedAmulet / AmuletAllocation: amulet.amount.initialAmount
+  // LockedAmulet / AmuletAllocation: amulet.amount.initialAmount (check FIRST — before flat amount)
   const amulet = args?.amulet as Record<string, unknown> | undefined
-  const amuletAmount = amulet?.amount as Record<string, unknown> | undefined
-  if (amuletAmount?.initialAmount) return parseFloat(amuletAmount.initialAmount as string)
+  if (amulet) {
+    const amuletAmount = amulet.amount as Record<string, unknown> | undefined
+    if (amuletAmount?.initialAmount) {
+      const v = parseFloat(amuletAmount.initialAmount as string)
+      if (!isNaN(v)) return v
+    }
+  }
+  // Amulet: amount.initialAmount (ExpiringAmount object)
+  if (args?.amount && typeof args.amount === 'object') {
+    const amount = args.amount as Record<string, unknown>
+    if (amount.initialAmount) {
+      const v = parseFloat(amount.initialAmount as string)
+      if (!isNaN(v)) return v
+    }
+  }
+  // Flat string amount (Holding, CBTC, USDTEST, etc.)
+  if (typeof args?.amount === 'string') {
+    const v = parseFloat(args.amount)
+    if (!isNaN(v)) return v
+  }
   return null
 }
 
@@ -506,7 +519,7 @@ function TemplateQueryResults({
       if (!map[groupKey]) map[groupKey] = { sum: 0, contracts: [] }
       map[groupKey].contracts.push(c)
       const val = ext.getAmount(args)
-      if (val) map[groupKey].sum += val
+      if (val != null && !isNaN(val)) map[groupKey].sum += val
     }
     return Object.entries(map).sort((a, b) => b[1].sum - a[1].sum)
   }, [data, balanceInfo])
@@ -685,7 +698,7 @@ function InterfaceQueryResults({
       if (!map[groupKey]) map[groupKey] = { sum: 0, contracts: [] }
       map[groupKey].contracts.push(c)
       const val = ext.getAmount(args)
-      if (val) map[groupKey].sum += val
+      if (val != null && !isNaN(val)) map[groupKey].sum += val
     }
     return Object.entries(map).sort((a, b) => b[1].sum - a[1].sum)
   }, [data, balanceInfo])
