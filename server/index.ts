@@ -6,6 +6,7 @@ import { startCron, runInitialIndexing } from './cron.js'
 import templatesRouter from './routes/templates.js'
 import indexerRouter from './routes/indexer.js'
 import proxyRouter from './routes/proxy.js'
+import localProxyRouter from './routes/local-proxy.js'
 import tokenRouter from './routes/token.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -23,12 +24,14 @@ async function main() {
   // Parse JSON bodies (needed for POST routes)
   app.use(express.json())
 
-  // CORS headers for all API routes
-  app.use('/api', (req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
-    if (req.method === 'OPTIONS') return res.status(204).end()
+  // CORS headers for all API and proxy routes
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/') || req.path.startsWith('/proxy/')) {
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+      if (req.method === 'OPTIONS') return res.status(204).end()
+    }
     next()
   })
 
@@ -37,6 +40,10 @@ async function main() {
   app.use('/api/cron/index-templates', indexerRouter)
   app.use('/api/proxy', proxyRouter)
   app.use('/api/auth/token', tokenRouter)
+
+  // Vite-style local proxy paths (/proxy/json/*, /proxy/validator/*, /proxy/remote/*)
+  // These are the paths the frontend uses when VITE_DEPLOY_ENV=local
+  app.use(localProxyRouter)
 
   // Serve static files from Vite build output
   const distPath = path.resolve(__dirname, '..', 'dist')
