@@ -44,17 +44,24 @@ function isAllowedTarget(url: string): boolean {
   }
 }
 
-// Handle /api/proxy/:encodedOrigin/*
-router.all('/:encodedOrigin/*', (req, res) => {
+// Handle all proxy requests via middleware — Express 5 path-to-regexp v8 doesn't support wildcard catch-alls
+// The route is mounted at /api/proxy in server/index.ts, so req.url here is everything after /api/proxy
+router.use((req, res, next) => {
+  // Parse /{encodedOrigin}/{rest...} from the URL
+  const urlPath = req.url.split('?')[0]
+  const segments = urlPath.split('/').filter(Boolean)
+  if (segments.length < 2) return next()
+
+  const encodedOrigin = segments[0]
   let targetOrigin: string
   try {
-    targetOrigin = base64urlDecode(req.params.encodedOrigin)
+    targetOrigin = base64urlDecode(encodedOrigin)
   } catch {
     return res.status(400).json({ error: 'Invalid base64url-encoded origin' })
   }
 
   // Everything after the encodedOrigin segment
-  const restPath = '/' + (req.params[0] || '')
+  const restPath = '/' + segments.slice(1).join('/')
 
   // Forward original query params
   const queryParams = new URLSearchParams()
