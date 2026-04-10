@@ -166,12 +166,11 @@ export function useActiveContracts(request: ActiveContractsRequest | null, key?:
 // On local dev: falls back to live discovery via discoverAllContracts.
 export function useDiscoverTemplates(partyId: string | undefined) {
   const node = useNodeConfig()
-  const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
   return useQuery({
     queryKey: ['discover-templates', node.id, partyId],
     queryFn: async () => {
-      // On Vercel: use the cached template index — zero active-contracts queries
-      if (isVercel) {
+      // Try the cached template index first (works on both Vercel and local Docker)
+      try {
         const networkKey = node.network || node.id
         let index = await api.fetchTemplateIndex(networkKey)
         // Fallback: infer network from node name
@@ -187,12 +186,14 @@ export function useDiscoverTemplates(partyId: string | undefined) {
           return index.templates.map((t) => ({
             templateId: t.templateId,
             packageName: t.packageName,
-            count: 0, // No count from index — counts come from live queries when user clicks
+            count: 0,
           }))
         }
+      } catch {
+        // Index API not available (e.g., running yarn dev without Express server)
       }
 
-      // Local dev fallback: live discovery
+      // Fallback: live discovery
       const token = await getToken(node)
       const contracts = await api.discoverAllContracts(node, token, partyId!)
       const templateMap: Record<string, { templateId: string; packageName: string; count: number }> = {}
@@ -238,25 +239,21 @@ export function useNodeHealth() {
   })
 }
 
-/** Pre-built template index from cron job (Vercel only). */
+/** Pre-built template index from cron job. */
 export function useTemplateIndex() {
   const node = useNodeConfig()
-  const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
   return useQuery({
     queryKey: ['template-index', node.network || node.id],
     queryFn: () => api.fetchTemplateIndex(node.network || node.id),
     staleTime: 60000,
-    enabled: isVercel,
   })
 }
 
 /** Cron job metadata — last run time, per-node status. */
 export function useCronMeta() {
-  const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
   return useQuery({
     queryKey: ['cron-meta'],
     queryFn: () => api.fetchCronMeta(),
     staleTime: 30000,
-    enabled: isVercel,
   })
 }
