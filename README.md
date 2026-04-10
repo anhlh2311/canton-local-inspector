@@ -26,7 +26,7 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 - **Autocomplete inputs** — Keyboard-navigable dropdowns (Arrow keys + Enter) with group headers for party and template selection
 - **Copy-friendly** — Every ID (party, contract, package, template) has a one-click copy button
 - **Auto-refresh** — Configurable polling interval (5s / 15s / 30s / 60s / off)
-- **Secure credential storage** — OAuth2 client secrets for dynamically-added nodes are stored server-side in Upstash Redis, never in the browser
+- **Secure credential storage** — OAuth2 client secrets for admin-configured nodes are stored server-side in Upstash Redis; other roles store node config in browser localStorage
 
 ## Tech Stack
 
@@ -132,7 +132,7 @@ Validator Audience: https://your-validator-audience  (optional, for separate val
 
 The **Network** field ensures template indexes are namespaced per network — devnet templates won't mix with mainnet templates during cross-node discovery.
 
-On Vercel deployments, OAuth2 client secrets are stored securely in Upstash Redis — never in the browser's localStorage.
+On Vercel deployments, OAuth2 client secrets for admin-configured nodes are stored server-side in Upstash Redis. Other roles store node configuration in browser localStorage.
 
 ## Authentication
 
@@ -321,7 +321,7 @@ The app supports deployment to Vercel with secure server-side auth, API proxying
 |-----------|----------------------|------------------------------|-------------------|
 | API Proxy | Vite dev proxy (`/proxy/remote/...`) | Express (`/api/proxy/...`) | Serverless function (`/api/proxy/...`) |
 | OAuth2 Token | Vite middleware | Express (`/api/auth/token`) | Serverless function (`/api/auth/token`) |
-| Client Secrets | In browser (dev only) | `CANTON_NODES_AUTH` env var | Upstash Redis (server-side) |
+| Client Secrets | In browser (dev only) | `CANTON_NODES_AUTH` env var | Upstash Redis (admin-added nodes) / localStorage (other roles) |
 | Template Index | Live discovery on demand | Cron (10 min) + PostgreSQL | Cron (daily) + Redis |
 | Node Config | Quickstart local nodes | `.env` file (`VITE_NODES`) | `VITE_NODES` env var |
 
