@@ -24,10 +24,11 @@ async function main() {
   app.use(express.json())
 
   // CORS headers for all API routes
-  app.use('/api', (_req, res, next) => {
+  app.use('/api', (req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+    if (req.method === 'OPTIONS') return res.status(204).end()
     next()
   })
 

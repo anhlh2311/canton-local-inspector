@@ -4,8 +4,44 @@ import https from 'node:https'
 
 const router = Router()
 
+// NOTE: This proxy is intended for local development only (Docker / yarn server).
+// It does not enforce session authentication. Do not expose to untrusted networks.
+
 function base64urlDecode(str: string): string {
   return Buffer.from(str.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8')
+}
+
+// Build allowed targets from env vars (mirrors Vercel proxy behavior)
+function getAllowedTargets(): string[] {
+  const targets: string[] = []
+  if (process.env.CANTON_JSON_API_URL) targets.push(process.env.CANTON_JSON_API_URL)
+  if (process.env.CANTON_VALIDATOR_API_URL) targets.push(process.env.CANTON_VALIDATOR_API_URL)
+  if (process.env.CANTON_ALLOWED_TARGETS) {
+    targets.push(...process.env.CANTON_ALLOWED_TARGETS.split(',').map((t) => t.trim()).filter(Boolean))
+  }
+  return targets
+}
+
+const ALLOWED_TARGETS = getAllowedTargets()
+
+function isAllowedTarget(url: string): boolean {
+  // Allow localhost targets (primary use case for local dev)
+  try {
+    const h = new URL(url).hostname
+    if (h === 'localhost' || h === '127.0.0.1') return true
+  } catch { /* continue */ }
+
+  if (ALLOWED_TARGETS.length === 0) return true
+  try {
+    const targetHost = new URL(url).hostname
+    return ALLOWED_TARGETS.some((allowed) => {
+      try {
+        return new URL(allowed).hostname === targetHost
+      } catch { return url.startsWith(allowed) }
+    })
+  } catch {
+    return ALLOWED_TARGETS.some((allowed) => url.startsWith(allowed))
+  }
 }
 
 // Handle /api/proxy/:encodedOrigin/*
@@ -31,6 +67,11 @@ router.all('/:encodedOrigin/*', (req, res) => {
   }
   const queryString = queryParams.toString()
   const fullUrl = targetOrigin + restPath + (queryString ? `?${queryString}` : '')
+
+  // Validate target URL
+  if (!isAllowedTarget(fullUrl) && !targetOrigin.startsWith('https://')) {
+    return res.status(403).json({ error: `Target URL not allowed: ${targetOrigin}` })
+  }
 
   let targetUrl: URL
   try {
@@ -71,20 +112,14 @@ router.all('/:encodedOrigin/*', (req, res) => {
     }
   })
 
-  // Pipe request body for POST/PUT/etc
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    req.pipe(proxyReq)
+  // Write body from already-parsed request (express.json() consumes the stream)
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
+    const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body)
+    proxyReq.write(body)
+    proxyReq.end()
   } else {
     proxyReq.end()
   }
-})
-
-// Handle OPTIONS for CORS preflight
-router.options('*', (_req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
-  res.status(204).end()
 })
 
 export default router

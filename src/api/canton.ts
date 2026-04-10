@@ -496,39 +496,37 @@ async function discoverTemplateIds(
   const client = createJsonApiClient(node, token)
   const templateIds = new Set<string>()
 
-  // Strategy 0: Pre-built index from cron job (Vercel only, fastest path)
-  if (isVercel) {
-    try {
-      // Try network key first, then node ID as fallback
-      const networkKey = node.network || node.id
-      let index = await fetchTemplateIndex(networkKey)
-      // If no index found and network isn't set, try inferring from node name
-      if ((!index.updatedAt || index.templates.length === 0) && !node.network) {
-        const nameLower = node.name.toLowerCase()
-        const inferred = ['mainnet', 'testnet', 'devnet'].find((n) => nameLower.includes(n))
-        if (inferred) {
-          const inferredIndex = await fetchTemplateIndex(inferred)
-          if (inferredIndex.updatedAt && inferredIndex.templates.length > 0) index = inferredIndex
+  // Strategy 0: Pre-built index from cron job (works on both Vercel and local Docker)
+  try {
+    // Try network key first, then node ID as fallback
+    const networkKey = node.network || node.id
+    let index = await fetchTemplateIndex(networkKey)
+    // If no index found and network isn't set, try inferring from node name
+    if ((!index.updatedAt || index.templates.length === 0) && !node.network) {
+      const nameLower = node.name.toLowerCase()
+      const inferred = ['mainnet', 'testnet', 'devnet'].find((n) => nameLower.includes(n))
+      if (inferred) {
+        const inferredIndex = await fetchTemplateIndex(inferred)
+        if (inferredIndex.updatedAt && inferredIndex.templates.length > 0) index = inferredIndex
+      }
+    }
+    if (index.updatedAt && index.templates.length > 0) {
+      const networkKey = getNetworkKey(node)
+      nodeNetworkMap[node.id] = networkKey
+      if (!packageNameMap[node.id]) packageNameMap[node.id] = {}
+      if (!knownTemplatePatterns[networkKey]) knownTemplatePatterns[networkKey] = {}
+      for (const t of index.templates) {
+        templateIds.add(t.templateId)
+        if (t.packageName) {
+          packageNameMap[node.id][t.packageId] = t.packageName
+          if (!knownTemplatePatterns[networkKey][t.packageName]) knownTemplatePatterns[networkKey][t.packageName] = new Set()
+          knownTemplatePatterns[networkKey][t.packageName].add(`${t.module}:${t.entity}`)
         }
       }
-      if (index.updatedAt && index.templates.length > 0) {
-        const networkKey = getNetworkKey(node)
-        nodeNetworkMap[node.id] = networkKey
-        if (!packageNameMap[node.id]) packageNameMap[node.id] = {}
-        if (!knownTemplatePatterns[networkKey]) knownTemplatePatterns[networkKey] = {}
-        for (const t of index.templates) {
-          templateIds.add(t.templateId)
-          if (t.packageName) {
-            packageNameMap[node.id][t.packageId] = t.packageName
-            if (!knownTemplatePatterns[networkKey][t.packageName]) knownTemplatePatterns[networkKey][t.packageName] = new Set()
-            knownTemplatePatterns[networkKey][t.packageName].add(`${t.module}:${t.entity}`)
-          }
-        }
-        for (const tid of constructTemplateIds(node)) templateIds.add(tid)
-        return templateIds
-      }
-    } catch { /* Index not available, fall through to live discovery */ }
-  }
+      for (const tid of constructTemplateIds(node)) templateIds.add(tid)
+      return templateIds
+    }
+  } catch { /* Index not available, fall through to live discovery */ }
 
   function addTemplateIds(contracts: ActiveContract[]) {
     learnFromContracts(node, contracts)
