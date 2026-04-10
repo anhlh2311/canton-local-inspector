@@ -19,7 +19,7 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 - **Dual auth modes** — Shared-secret (HMAC-SHA256 JWT) for local dev, OAuth2 client credentials for remote/production
 - **Separate validator audience** — OAuth2 nodes can use a different audience for the Validator API vs the JSON API
 - **Auto-discovery** — Templates and package names are discovered from the ledger, not hardcoded
-- **Cron-based template indexing** — Daily background job streams all contracts via WebSocket, builds template index in Upstash Redis per network
+- **Cron-based template indexing** — Background job streams all contracts via WebSocket, builds template index per network. Runs daily on Vercel (Upstash Redis) or every 10 minutes locally via Docker (PostgreSQL)
 - **WebSocket streaming** — "Load All" button on templates with >200 contracts streams via WebSocket (no limit). Progress indicator, cancel button, large stream warning (>5,000 contracts), and React Query cache with 50K contract cap and auto-eviction
 - **Network-aware nodes** — Each node has a network identifier (devnet/testnet/mainnet/local) ensuring template indexes don't overlap
 - **Grouped template dropdown** — Templates grouped by package with truncated package hash headers in the Contract Explorer
@@ -36,7 +36,10 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 - Jotai for client state (with localStorage persistence)
 - Axios for HTTP
 - jose for JWT signing (HS256 shared-secret auth)
-- Upstash Redis for server-side credential and template index storage
+- Upstash Redis for server-side credential and template index storage (Vercel)
+- PostgreSQL for local template index storage (Docker)
+- Express 5 for local production server (Docker)
+- node-cron for local scheduled template indexing (Docker)
 - Vercel Serverless Functions for secure OAuth2 token exchange and API proxy
 - Vercel Cron for scheduled template indexing
 
@@ -45,8 +48,13 @@ A dashboard for inspecting Canton Network participant nodes. Connect to local or
 - Node.js 18+
 - Yarn
 - A running Canton network (e.g., via the [Canton Quickstart](https://github.com/digital-asset/canton-quickstart))
+- Docker & Docker Compose (for local Docker deployment)
 
 ## Getting Started
+
+There are two ways to run the app locally:
+
+### Option 1: Vite Dev Server (for frontend development)
 
 ```bash
 # Install dependencies
@@ -54,12 +62,43 @@ yarn
 
 # Start dev server (with Vite proxy for CORS)
 yarn dev
-
-# Build for production
-yarn build
 ```
 
-The dev server starts at `http://localhost:5173` and proxies API requests to Canton nodes to avoid CORS issues.
+The dev server starts at `http://localhost:5173` and proxies API requests to Canton nodes to avoid CORS issues. Template discovery uses live queries (no indexing).
+
+### Option 2: Docker Compose (recommended for local deployment)
+
+Runs the production build in Docker with PostgreSQL-backed template indexing, an Express server, and a cron job that indexes templates every 10 minutes.
+
+```bash
+# Build and start (app + PostgreSQL)
+docker compose up -d
+
+# App available at http://localhost:3888
+
+# View logs
+docker compose logs -f app
+
+# Stop
+docker compose down
+```
+
+The Docker setup includes:
+
+| Container | Purpose | Port |
+|-----------|---------|------|
+| `app` | Express server serving production build + API routes + cron | 3888 |
+| `postgres` | PostgreSQL 16 for template index storage | 5434 |
+
+On startup, the app:
+1. Initializes the PostgreSQL schema
+2. Starts the Express server serving the Vite build output
+3. Schedules template indexing every 10 minutes (configurable via `CRON_SCHEDULE`)
+4. Runs an initial indexing pass after 5 seconds
+
+The Docker setup reads your `.env` file for node configuration (`VITE_NODES`, `CANTON_NODES_AUTH`, etc.). `DATABASE_URL` is set automatically by docker-compose.
+
+**Manual refresh**: The "Refresh Index Now" button in Settings also works in Docker mode, with the same 5-minute cooldown.
 
 ## Default Node Configuration
 
@@ -135,27 +174,34 @@ The web app itself is protected by Google OAuth (invite-only access):
 
 Canton's JSON API limits active contract responses to 200 elements per request. The inspector uses a multi-strategy approach to discover all templates:
 
-### Cron-Based Indexing (Vercel)
+### Cron-Based Indexing
 
-A daily cron job streams all active contracts via **WebSocket** (no 200 limit) and caches discovered templates in Upstash Redis:
+Template indexing streams all active contracts via **WebSocket** (no 200 limit) and caches discovered templates:
 
 1. **WebSocket Stream** — Connects to `wss://node/v2/state/active-contracts` with `filtersForAnyParty` wildcard, streams all contracts (48K+ on mainnet), extracts unique template IDs
 2. **HTTP Fallback** — If WebSocket fails, falls back to `filtersForAnyParty` HTTP wildcard, then per-user-party wildcards
 
 The index is namespaced by **network** (`canton:templates:devnet`, `canton:templates:mainnet`) to prevent cross-network template mixing. Multiple nodes on the same network merge their templates.
 
-**Manual refresh**: Click "Refresh Index Now" in Settings. A **5-minute cooldown** prevents abuse — the server returns HTTP 429 if triggered too frequently, protecting Upstash Redis quota.
+| | Vercel | Docker (Local) |
+|---|--------|----------------|
+| **Storage** | Upstash Redis | PostgreSQL |
+| **Schedule** | Daily at 3 AM UTC | Every 10 minutes (configurable) |
+| **Localhost nodes** | Skipped (unreachable from cloud) | Indexed (primary use case) |
+| **Remote nodes** | Indexed | Indexed |
 
-**Security**:
+**Manual refresh**: Click "Refresh Index Now" in Settings. A **5-minute cooldown** prevents abuse — the server returns HTTP 429 if triggered too frequently.
+
+**Security (Vercel)**:
 
 - Vercel cron (GET): authenticated via `CRON_SECRET` Bearer token
 - Manual trigger (POST): authenticated via same-origin check (browser `Origin` header must match `Host`)
 
 ### Live Discovery Fallback
 
-When the cron index is unavailable (local dev, or first deploy before the cron runs):
+When the cron index is unavailable (e.g., running `yarn dev` without Docker, or first deploy before the cron runs):
 
-1. **Cached Index** — Checks Redis for pre-built template index (Vercel only)
+1. **Cached Index** — Checks template index from storage (Redis on Vercel, PostgreSQL on Docker)
 2. **Scan Proxy** — Core Splice templates via the Validator API
 3. **`filtersForAnyParty` Wildcard** — Single-shot HTTP coverage
 4. **Per-User-Party Wildcards** — Probes individual parties, stops on first success
@@ -243,6 +289,21 @@ api/                           # Vercel Serverless Functions (each fully self-co
 ├── proxy.ts                   # Canton API proxy
 └── templates.ts               # Cached template index reader
 
+server/                        # Local Express server (Docker deployment)
+├── index.ts                   # Express app entry point
+├── cron.ts                    # node-cron scheduler (every 10 min)
+├── db-init.ts                 # PostgreSQL schema initialization
+├── storage/
+│   ├── interface.ts           # TemplateStorage abstraction
+│   ├── index.ts               # Storage factory (Redis or PostgreSQL)
+│   ├── redis.ts               # Upstash Redis implementation
+│   └── postgres.ts            # PostgreSQL implementation
+└── routes/
+    ├── templates.ts           # GET /api/templates
+    ├── indexer.ts             # GET/POST /api/cron/index-templates
+    ├── proxy.ts               # ALL /api/proxy/*
+    └── token.ts               # POST /api/auth/token
+
 docs/                          # Documentation
 ├── architecture.md            # System architecture with Mermaid diagrams
 ├── data-flows.md              # Sequence diagrams for all data flows
@@ -256,13 +317,13 @@ The app supports deployment to Vercel with secure server-side auth, API proxying
 
 ### Architecture
 
-| Component | Local Dev | Vercel Production |
-|-----------|-----------|-------------------|
-| API Proxy | Vite dev proxy (`/proxy/remote/...`) | Serverless function (`/api/proxy/...`) |
-| OAuth2 Token | Client-side via Vite proxy | Serverless function (`/api/auth/token`) |
-| Client Secrets | In browser (dev only) | Upstash Redis (server-side) |
-| Template Index | Live discovery on demand | Cron job + Redis cache |
-| Node Config | Quickstart local nodes | `VITE_NODES` env var |
+| Component | Vite Dev (`yarn dev`) | Docker (`docker compose up`) | Vercel Production |
+|-----------|----------------------|------------------------------|-------------------|
+| API Proxy | Vite dev proxy (`/proxy/remote/...`) | Express (`/api/proxy/...`) | Serverless function (`/api/proxy/...`) |
+| OAuth2 Token | Vite middleware | Express (`/api/auth/token`) | Serverless function (`/api/auth/token`) |
+| Client Secrets | In browser (dev only) | `CANTON_NODES_AUTH` env var | Upstash Redis (server-side) |
+| Template Index | Live discovery on demand | Cron (10 min) + PostgreSQL | Cron (daily) + Redis |
+| Node Config | Quickstart local nodes | `.env` file (`VITE_NODES`) | `VITE_NODES` env var |
 
 ### Environment Variables
 
@@ -347,8 +408,22 @@ vercel --prod
 
 ### Local Development
 
-Local dev is unaffected. `VITE_DEPLOY_ENV` defaults to `local` (or is unset), which uses the Vite proxy. To test Vercel functions locally:
+`yarn dev` is unaffected. `VITE_DEPLOY_ENV` defaults to `local` (or is unset), which uses the Vite proxy with live template discovery.
+
+For a production-like local setup with template indexing, use Docker Compose instead (see [Getting Started](#getting-started)).
+
+To test Vercel functions locally:
 
 ```bash
 vercel dev
 ```
+
+### Docker Environment Variables
+
+These are used when running via `docker compose up` or `yarn server`:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DATABASE_URL` | Set by docker-compose | PostgreSQL connection string |
+| `CRON_SCHEDULE` | `*/10 * * * *` | Indexing cron schedule |
+| `PORT` | `3000` | Express server port (mapped to 3888 externally) |
