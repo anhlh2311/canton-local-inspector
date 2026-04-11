@@ -37,6 +37,10 @@ function buildFullUrl(url: string, port: number): string {
   try {
     const parsed = new URL(url)
     if (!parsed.port && port) parsed.port = String(port)
+    // Inside Docker, localhost refers to the container — use host.docker.internal to reach host
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+      parsed.hostname = process.env.DOCKER_HOST_OVERRIDE || 'host.docker.internal'
+    }
     return parsed.href.replace(/\/$/, '')
   } catch {
     return port ? `${url}:${port}` : url
