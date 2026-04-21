@@ -8,6 +8,7 @@ COPY . .
 RUN yarn build
 
 FROM node:22-alpine
+RUN apk add --no-cache openssl
 WORKDIR /app
 
 COPY --from=builder /app/dist ./dist
