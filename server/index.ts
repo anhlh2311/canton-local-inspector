@@ -79,12 +79,20 @@ async function main() {
   const distPath = path.resolve(__dirname, '..', 'dist')
   app.use(express.static(distPath))
 
-  // SPA fallback: serve index.html for all non-API routes
+  // SPA fallback: serve index.html with runtime env vars injected
+  const indexHtml = fs.readFileSync(path.join(distPath, 'index.html'), 'utf-8')
+  const runtimeEnv: Record<string, string> = {}
+  if (process.env.VITE_NODES) runtimeEnv.VITE_NODES = process.env.VITE_NODES
+  const injectedHtml = indexHtml.replace(
+    '</head>',
+    `<script>window.__RUNTIME_ENV__=${JSON.stringify(runtimeEnv)}</script></head>`,
+  )
   app.use((req, res, next) => {
     if (req.method !== 'GET' || req.path.startsWith('/api/')) {
       return next()
     }
-    res.sendFile(path.join(distPath, 'index.html'))
+    res.setHeader('Content-Type', 'text/html')
+    res.send(injectedHtml)
   })
 
   app.listen(PORT, '0.0.0.0', () => {

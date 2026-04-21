@@ -25,6 +25,7 @@ const defaultSharedSecretAuth: AuthConfig = {
  */
 function parseNodesFromEnv(): NodeConfig[] | null {
   let raw = import.meta.env.VITE_NODES as string | undefined
+    || (window as unknown as Record<string, Record<string, string>>).__RUNTIME_ENV__?.VITE_NODES
   if (!raw) return null
 
   // Strip surrounding quotes that .env parsers may include
