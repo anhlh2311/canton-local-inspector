@@ -19,6 +19,7 @@ services:
     build: .
     ports:
       - "3888:3000"
+      - "3889:3443"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     env_file:

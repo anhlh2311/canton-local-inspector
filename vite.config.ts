@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import fs from 'node:fs'
@@ -215,7 +216,7 @@ function dynamicProxyPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), dynamicProxyPlugin()],
+  plugins: [react(), basicSsl(), tailwindcss(), dynamicProxyPlugin()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

@@ -57,6 +57,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
     "@vercel/node": "^5.6.21",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-react": "^6.0.1",
     "autoprefixer": "^10.4.27",
     "eslint": "^9.39.4",

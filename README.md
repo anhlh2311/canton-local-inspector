@@ -74,7 +74,7 @@ Runs the production build in Docker with PostgreSQL-backed template indexing, an
 # Build and start (app + PostgreSQL)
 docker compose up -d
 
-# App available at http://localhost:3888
+# App available at http://localhost:3888 (or https://localhost:3889)
 
 # View logs
 docker compose logs -f app
@@ -87,14 +87,15 @@ The Docker setup includes:
 
 | Container | Purpose | Port |
 |-----------|---------|------|
-| `app` | Express server serving production build + API routes + cron | 3888 |
+| `app` | Express server serving production build + API routes + cron | 3888 (HTTP), 3889 (HTTPS) |
 | `postgres` | PostgreSQL 16 for template index storage | 5434 |
 
 On startup, the app:
 1. Initializes the PostgreSQL schema
-2. Starts the Express server serving the Vite build output
-3. Schedules template indexing every 10 minutes (configurable via `CRON_SCHEDULE`)
-4. Runs an initial indexing pass after 5 seconds
+2. Starts the Express server serving the Vite build output (HTTP on port 3000, HTTPS on port 3443)
+3. Auto-generates a self-signed TLS certificate (via `openssl`) if none exists — HTTPS is needed for `crypto.subtle` when accessing from non-localhost addresses
+4. Schedules template indexing every 10 minutes (configurable via `CRON_SCHEDULE`)
+5. Runs an initial indexing pass after 5 seconds
 
 The Docker setup reads your `.env` file for node configuration (`VITE_NODES`, `CANTON_NODES_AUTH`, etc.). `DATABASE_URL` is set automatically by docker-compose.
 
@@ -426,4 +427,6 @@ These are used when running via `docker compose up` or `yarn server`:
 |----------|---------|---------|
 | `DATABASE_URL` | Set by docker-compose | PostgreSQL connection string |
 | `CRON_SCHEDULE` | `*/10 * * * *` | Indexing cron schedule |
-| `PORT` | `3000` | Express server port (mapped to 3888 externally) |
+| `PORT` | `3000` | Express server HTTP port (mapped to 3888 externally) |
+| `HTTPS_PORT` | `3443` | Express server HTTPS port (mapped to 3889 externally) |
+| `CERT_DIR` | `.certs` | Directory for TLS certificate and key (`cert.pem`, `key.pem`) |

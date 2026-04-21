@@ -1,4 +1,7 @@
 import express from 'express'
+import https from 'node:https'
+import fs from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initDatabase } from './db-init.js'
@@ -11,6 +14,33 @@ import tokenRouter from './routes/token.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT) || 3000
+const HTTPS_PORT = Number(process.env.HTTPS_PORT) || 3443
+const CERT_DIR = process.env.CERT_DIR || path.resolve(__dirname, '..', '.certs')
+
+/** Generate a self-signed certificate if none exists. Requires openssl. */
+function ensureSelfSignedCert(): { key: string; cert: string } | null {
+  const keyPath = path.join(CERT_DIR, 'key.pem')
+  const certPath = path.join(CERT_DIR, 'cert.pem')
+
+  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    return { key: fs.readFileSync(keyPath, 'utf-8'), cert: fs.readFileSync(certPath, 'utf-8') }
+  }
+
+  try {
+    fs.mkdirSync(CERT_DIR, { recursive: true })
+    execFileSync('openssl', [
+      'req', '-x509', '-newkey', 'rsa:2048',
+      '-keyout', keyPath, '-out', certPath,
+      '-days', '365', '-nodes',
+      '-subj', '/CN=canton-inspector',
+    ], { stdio: 'pipe' })
+    console.log('[server] Generated self-signed certificate in', CERT_DIR)
+    return { key: fs.readFileSync(keyPath, 'utf-8'), cert: fs.readFileSync(certPath, 'utf-8') }
+  } catch (err) {
+    console.warn('[server] Could not generate self-signed cert (openssl not available?):', (err as Error).message)
+    return null
+  }
+}
 
 async function main() {
   // Initialize PostgreSQL schema if DATABASE_URL is set
@@ -60,6 +90,14 @@ async function main() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[server] Canton Inspector running at http://localhost:${PORT}`)
   })
+
+  // Start HTTPS server with self-signed cert (needed for crypto.subtle on non-localhost)
+  const tlsCert = ensureSelfSignedCert()
+  if (tlsCert) {
+    https.createServer(tlsCert, app).listen(HTTPS_PORT, '0.0.0.0', () => {
+      console.log(`[server] Canton Inspector (HTTPS) running at https://localhost:${HTTPS_PORT}`)
+    })
+  }
 
   // Start cron scheduler
   startCron()

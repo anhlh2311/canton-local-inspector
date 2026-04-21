@@ -15,6 +15,6 @@ COPY --from=builder /app/server ./server
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 
-EXPOSE 3000
+EXPOSE 3000 3443
 
 CMD ["npx", "tsx", "server/index.ts"]
