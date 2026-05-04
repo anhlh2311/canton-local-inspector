@@ -199,11 +199,18 @@ export function useDiscoverTemplates(partyId: string | undefined) {
       for (const c of contracts as ActiveContract[]) {
         const evt = c?.contractEntry?.JsActiveContract?.createdEvent
         if (!evt?.templateId) continue
-        const tid = evt.templateId
+        const rawTid = evt.templateId as string
+        const pkgName = (evt.packageName as string) ?? ''
+        // Convert to #packageName:Module:Entity format
+        let tid = rawTid
+        if (pkgName) {
+          const colonIdx = rawTid.indexOf(':')
+          if (colonIdx > 0) tid = `#${pkgName}:${rawTid.slice(colonIdx + 1)}`
+        }
         if (!templateMap[tid]) {
           templateMap[tid] = {
             templateId: tid,
-            packageName: evt.packageName ?? '',
+            packageName: pkgName,
             count: 0,
           }
         }

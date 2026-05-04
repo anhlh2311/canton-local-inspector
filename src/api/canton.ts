@@ -463,18 +463,18 @@ function learnFromScanProxy(node: NodeConfig, templateId: string) {
   }
 }
 
-/** Construct template IDs for a node by combining its package IDs with known Module:Entity patterns
- *  from the SAME network. Returns full templateId strings (packageId:Module:Entity). */
+/** Construct template IDs for a node by combining package names with known Module:Entity patterns
+ *  from the SAME network. Returns #packageName:Module:Entity format for Canton queries. */
 function constructTemplateIds(node: NodeConfig): Set<string> {
   const result = new Set<string>()
   const networkKey = getNetworkKey(node)
   const nodePkgMap = packageNameMap[node.id] ?? {}
   const networkPatterns = knownTemplatePatterns[networkKey] ?? {}
-  for (const [pkgId, pkgName] of Object.entries(nodePkgMap)) {
+  for (const [, pkgName] of Object.entries(nodePkgMap)) {
     const patterns = networkPatterns[pkgName]
     if (patterns) {
       for (const moduleEntity of patterns) {
-        result.add(`${pkgId}:${moduleEntity}`)
+        result.add(`#${pkgName}:${moduleEntity}`)
       }
     }
   }
@@ -533,8 +533,19 @@ async function discoverTemplateIds(
   function addTemplateIds(contracts: ActiveContract[]) {
     learnFromContracts(node, contracts)
     for (const c of contracts) {
-      const tid = c?.contractEntry?.JsActiveContract?.createdEvent?.templateId
-      if (tid) templateIds.add(tid)
+      const evt = c?.contractEntry?.JsActiveContract?.createdEvent
+      if (!evt?.templateId) continue
+      const tid = evt.templateId as string
+      const pkgName = evt.packageName as string | undefined
+      // Convert to #packageName:Module:Entity format (Canton no longer accepts packageId)
+      if (pkgName) {
+        const colonIdx = tid.indexOf(':')
+        if (colonIdx > 0) {
+          templateIds.add(`#${pkgName}:${tid.slice(colonIdx + 1)}`)
+          continue
+        }
+      }
+      templateIds.add(tid)
     }
   }
 
@@ -547,10 +558,24 @@ async function discoverTemplateIds(
         valClient.get('/api/validator/v0/scan-proxy/amulet-rules'),
         valClient.get('/api/validator/v0/scan-proxy/open-and-issuing-mining-rounds'),
       ])
-      // Extract template_ids from scan proxy responses
+      // Extract template_ids from scan proxy responses and convert to #packageName format
+      function addScanProxyTid(tid: string) {
+        learnFromScanProxy(node, tid)
+        // Convert using the packageName learned from scan proxy
+        const colonIdx = tid.indexOf(':')
+        if (colonIdx > 0) {
+          const pkgId = tid.slice(0, colonIdx)
+          const pkgName = packageNameMap[node.id]?.[pkgId]
+          if (pkgName) {
+            templateIds.add(`#${pkgName}:${tid.slice(colonIdx + 1)}`)
+            return
+          }
+        }
+        templateIds.add(tid)
+      }
       if (amuletRulesRes.status === 'fulfilled') {
         const tid = amuletRulesRes.value.data?.amulet_rules?.contract?.template_id
-        if (tid) { templateIds.add(tid); learnFromScanProxy(node, tid) }
+        if (tid) addScanProxyTid(tid)
       }
       if (roundsRes.status === 'fulfilled') {
         const data = roundsRes.value.data
@@ -558,7 +583,7 @@ async function discoverTemplateIds(
           if (Array.isArray(data[key])) {
             for (const r of data[key]) {
               const tid = r?.contract?.template_id
-              if (tid) { templateIds.add(tid); learnFromScanProxy(node, tid) }
+              if (tid) addScanProxyTid(tid)
             }
           }
         }

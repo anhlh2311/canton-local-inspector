@@ -195,12 +195,16 @@ function parseTemplateId(templateId: string, packageName: string = ''): Template
   const rest = templateId.slice(colonIdx + 1)
   const lastColon = rest.lastIndexOf(':')
   if (lastColon < 0) return null
+  const module = rest.slice(0, lastColon)
+  const entity = rest.slice(lastColon + 1)
+  // Canton no longer accepts packageId in queries — use #packageName:Module:Entity format
+  const queryTemplateId = packageName ? `#${packageName}:${module}:${entity}` : templateId
   return {
-    templateId,
+    templateId: queryTemplateId,
     packageId,
     packageName,
-    module: rest.slice(0, lastColon),
-    entity: rest.slice(lastColon + 1),
+    module,
+    entity,
   }
 }
 
