@@ -58,7 +58,7 @@ function DsoContractsPanel({ partyId }: { partyId: string }) {
 
       const shortName = t.templateId.split(':').pop() ?? t.templateId
       if (!byName[shortName]) {
-        byName[shortName] = { shortName, packageName: pkgName || t.templateId.split(':')[0], totalCount: 0, templateIds: [] }
+        byName[shortName] = { shortName, packageName: pkgName || shortName, totalCount: 0, templateIds: [] }
       }
       if (t.count > byName[shortName].totalCount) {
         byName[shortName].totalCount = t.count

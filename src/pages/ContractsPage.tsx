@@ -79,23 +79,16 @@ function useTemplateOptions(partyId: string | undefined) {
     () =>
       (() => {
         const raw = discovery.data ?? []
-        // Group by packageId, sort groups by packageName, sort templates within group by entity
+        // Group by packageName, sort groups alphabetically, sort templates within group by entity
         const byPkg: Record<string, typeof raw> = {}
         for (const t of raw) {
-          const pkgId = t.templateId.split(':')[0] || ''
-          if (!byPkg[pkgId]) byPkg[pkgId] = []
-          byPkg[pkgId].push(t)
+          const key = t.packageName || t.templateId.split(':')[0] || ''
+          if (!byPkg[key]) byPkg[key] = []
+          byPkg[key].push(t)
         }
         const result: AutocompleteOption[] = []
-        const sortedPkgs = Object.entries(byPkg).sort((a, b) => {
-          const nameA = a[1][0]?.packageName || a[0]
-          const nameB = b[1][0]?.packageName || b[0]
-          return nameA.localeCompare(nameB)
-        })
-        for (const [pkgId, templates] of sortedPkgs) {
-          const pkgName = templates[0]?.packageName || ''
-          const pkgShort = pkgId.length > 20 ? `${pkgId.slice(0, 10)}...${pkgId.slice(-10)}` : pkgId
-          const groupLabel = pkgName ? `${pkgShort}(${pkgName})` : pkgShort
+        const sortedPkgs = Object.entries(byPkg).sort((a, b) => a[0].localeCompare(b[0]))
+        for (const [pkgName, templates] of sortedPkgs) {
           const sorted = [...templates].sort((a, b) => {
             const eA = a.templateId.split(':').pop() || ''
             const eB = b.templateId.split(':').pop() || ''
@@ -109,7 +102,7 @@ function useTemplateOptions(partyId: string | undefined) {
               value: t.templateId,
               label: entity,
               sublabel: module,
-              group: groupLabel,
+              group: pkgName,
             })
           }
         }
