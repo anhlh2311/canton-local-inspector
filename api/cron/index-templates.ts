@@ -211,20 +211,35 @@ function parseTemplateId(templateId: string, packageName: string = ''): Template
 async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[]> {
   const jsonBase = buildFullUrl(node.jsonApiUrl, node.jsonApiPort)
   const templates = new Map<string, TemplateEntry>()
+  const TAG = `[index-templates] ${node.id}`
+
+  console.log(`${TAG}: starting indexing — jsonBase=${jsonBase}, authMode=${node.authMode}`)
 
   const jsonToken = await getJsonApiToken(node, redis)
   const jsonHeaders = { 'Authorization': `Bearer ${jsonToken}`, 'Content-Type': 'application/json' }
 
   // Get ledger end offset
   const ledgerEndRes = await fetch(`${jsonBase}/v2/state/ledger-end`, { headers: jsonHeaders })
-  if (!ledgerEndRes.ok) throw new Error(`Ledger end failed: ${ledgerEndRes.status}`)
+  if (!ledgerEndRes.ok) {
+    const body = await ledgerEndRes.text().catch(() => '(unreadable)')
+    throw new Error(`Ledger end failed: ${ledgerEndRes.status} — ${body}`)
+  }
   const { offset } = await ledgerEndRes.json()
+  console.log(`${TAG}: ledger-end offset=${JSON.stringify(offset)}`)
 
   const errors: string[] = []
 
   // Primary strategy: WebSocket streaming (no 200-element limit)
   try {
+    console.log(`${TAG}: [WS] attempting WebSocket streaming...`)
     const wsContracts = await streamActiveContracts(jsonBase, jsonToken, offset)
+    console.log(`${TAG}: [WS] received ${wsContracts.length} messages`)
+    if (wsContracts.length > 0 && wsContracts.length <= 3) {
+      console.log(`${TAG}: [WS] sample messages: ${JSON.stringify(wsContracts).slice(0, 2000)}`)
+    } else if (wsContracts.length > 3) {
+      console.log(`${TAG}: [WS] first message keys: ${JSON.stringify(Object.keys(wsContracts[0] || {}))}`)
+      console.log(`${TAG}: [WS] first message sample: ${JSON.stringify(wsContracts[0]).slice(0, 1000)}`)
+    }
     for (const c of wsContracts) {
       const entry = (c as Record<string, unknown>)?.contractEntry as Record<string, unknown> | undefined
       const active = entry?.JsActiveContract as Record<string, unknown> | undefined
@@ -234,27 +249,39 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
         if (e) templates.set(e.templateId, e)
       }
     }
+    console.log(`${TAG}: [WS] extracted ${templates.size} unique templates from ${wsContracts.length} contracts`)
     if (templates.size > 0) return [...templates.values()]
     errors.push(`WebSocket returned ${wsContracts.length} contracts, 0 templates`)
   } catch (err) {
+    const errMsg = err instanceof Error ? `${err.message}\n${err.stack}` : String(err)
+    console.error(`${TAG}: [WS] error:`, errMsg)
     errors.push(`WebSocket: ${err instanceof Error ? err.message : String(err)}`)
   }
 
   // Fallback 1: HTTP filtersForAnyParty wildcard (limited to 200)
   const wildcardFilter = { identifierFilter: { WildcardFilter: { value: { includeCreatedEventBlob: false } } } }
   try {
+    console.log(`${TAG}: [HTTP] attempting filtersForAnyParty wildcard...`)
+    const httpBody = {
+      filter: { filtersForAnyParty: { cumulative: [wildcardFilter] } },
+      verbose: false,
+      activeAtOffset: offset,
+    }
     const res = await fetch(`${jsonBase}/v2/state/active-contracts`, {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({
-        filter: { filtersForAnyParty: { cumulative: [wildcardFilter] } },
-        verbose: false,
-        activeAtOffset: offset,
-      }),
+      body: JSON.stringify(httpBody),
     })
+    const hdrs: Record<string, string> = {}
+    res.headers.forEach((v, k) => { hdrs[k] = v })
+    console.log(`${TAG}: [HTTP] response status=${res.status}, content-type=${hdrs['content-type'] || 'unknown'}, content-length=${hdrs['content-length'] || 'unknown'}`)
     if (res.ok) {
-      const contracts = await res.json()
+      const rawText = await res.text()
+      console.log(`${TAG}: [HTTP] response body length=${rawText.length}, preview=${rawText.slice(0, 500)}`)
+      let contracts: unknown
+      try { contracts = JSON.parse(rawText) } catch { contracts = rawText }
       if (Array.isArray(contracts)) {
+        console.log(`${TAG}: [HTTP] parsed ${contracts.length} contracts`)
         for (const c of contracts) {
           const entry = (c as Record<string, unknown>)?.contractEntry as Record<string, unknown> | undefined
           const active = entry?.JsActiveContract as Record<string, unknown> | undefined
@@ -264,19 +291,27 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
             if (e) templates.set(e.templateId, e)
           }
         }
+      } else {
+        console.warn(`${TAG}: [HTTP] response is not an array — type=${typeof contracts}, value=${rawText.slice(0, 500)}`)
       }
       if (templates.size > 0) return [...templates.values()]
       errors.push(`HTTP wildcard: ${res.status} ok but 0 templates`)
     } else {
-      errors.push(`HTTP wildcard: ${res.status}`)
+      const errBody = await res.text().catch(() => '(unreadable)')
+      console.error(`${TAG}: [HTTP] error response: status=${res.status}, body=${errBody.slice(0, 1000)}`)
+      errors.push(`HTTP wildcard: ${res.status} — ${errBody.slice(0, 200)}`)
     }
   } catch (err) {
+    const errMsg = err instanceof Error ? `${err.message}\n${err.stack}` : String(err)
+    console.error(`${TAG}: [HTTP] fetch error:`, errMsg)
     errors.push(`HTTP wildcard: ${err instanceof Error ? err.message : String(err)}`)
   }
 
   // Fallback 2: Per-user-party wildcards
   try {
+    console.log(`${TAG}: [Party] attempting per-user-party wildcards...`)
     const usersRes = await fetch(`${jsonBase}/v2/users?pageSize=20`, { headers: jsonHeaders })
+    console.log(`${TAG}: [Party] users endpoint status=${usersRes.status}`)
     if (usersRes.ok) {
       const usersData = await usersRes.json()
       const parties = new Set<string>()
@@ -284,6 +319,7 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
         const u = (entry as Record<string, unknown>)?.user ?? entry
         if ((u as Record<string, unknown>)?.primaryParty) parties.add((u as Record<string, unknown>).primaryParty as string)
       }
+      console.log(`${TAG}: [Party] found ${parties.size} parties: ${[...parties].slice(0, 5).join(', ')}`)
       for (const party of [...parties].slice(0, 5)) {
         try {
           const res = await fetch(`${jsonBase}/v2/state/active-contracts`, {
@@ -295,9 +331,11 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
               activeAtOffset: offset,
             }),
           })
+          console.log(`${TAG}: [Party] party=${party.slice(0, 30)}... status=${res.status}`)
           if (res.ok) {
             const contracts = await res.json()
             if (Array.isArray(contracts)) {
+              console.log(`${TAG}: [Party] party=${party.slice(0, 30)}... returned ${contracts.length} contracts`)
               for (const c of contracts) {
                 const cEntry = (c as Record<string, unknown>)?.contractEntry as Record<string, unknown> | undefined
                 const cActive = cEntry?.JsActiveContract as Record<string, unknown> | undefined
@@ -307,16 +345,34 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
                   if (e) templates.set(e.templateId, e)
                 }
               }
+            } else {
+              const raw = JSON.stringify(contracts).slice(0, 500)
+              console.warn(`${TAG}: [Party] party=${party.slice(0, 30)}... response not array: ${raw}`)
             }
             if (templates.size > 0) break
+          } else {
+            const errBody = await res.text().catch(() => '(unreadable)')
+            console.warn(`${TAG}: [Party] party=${party.slice(0, 30)}... error: ${res.status} — ${errBody.slice(0, 300)}`)
           }
-        } catch { /* try next party */ }
+        } catch (err) {
+          console.warn(`${TAG}: [Party] party=${party.slice(0, 30)}... exception: ${err instanceof Error ? err.message : String(err)}`)
+        }
       }
+    } else {
+      const errBody = await usersRes.text().catch(() => '(unreadable)')
+      console.warn(`${TAG}: [Party] users endpoint failed: ${usersRes.status} — ${errBody.slice(0, 300)}`)
+      errors.push(`Per-user-party: users endpoint ${usersRes.status}`)
     }
-  } catch { /* continue */ }
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err)
+    console.error(`${TAG}: [Party] exception:`, errMsg)
+    errors.push(`Per-user-party: ${errMsg}`)
+  }
 
   if (templates.size === 0 && errors.length > 0) {
-    console.warn(`[index-templates] ${node.id}: all strategies failed:`, errors.join('; '))
+    console.error(`${TAG}: ALL STRATEGIES FAILED — errors: ${errors.join(' | ')}`)
+  } else {
+    console.log(`${TAG}: finished with ${templates.size} templates`)
   }
   return [...templates.values()]
 }
@@ -330,15 +386,19 @@ function streamActiveContracts(
 ): Promise<Record<string, unknown>[]> {
   return new Promise((resolve, reject) => {
     const wsUrl = jsonBase.replace(/^http/, 'ws') + '/v2/state/active-contracts'
+    console.log(`[index-templates] [WS] connecting to ${wsUrl}`)
     const ws = new WebSocket(wsUrl, [`jwt.token.${token}`, 'daml.ws.auth'])
     const contracts: Record<string, unknown>[] = []
+    let messageCount = 0
     const TIMEOUT_MS = 45000 // 45s — leave 15s buffer for the 60s Vercel limit
     const timer = setTimeout(() => {
+      console.warn(`[index-templates] [WS] timeout after ${TIMEOUT_MS}ms with ${contracts.length} contracts, ${messageCount} total messages`)
       ws.close()
       resolve(contracts) // Return whatever we got before timeout
     }, TIMEOUT_MS)
 
     ws.on('open', () => {
+      console.log(`[index-templates] [WS] connected, sending filter request with offset=${JSON.stringify(offset)}`)
       ws.send(JSON.stringify({
         filter: {
           filtersForAnyParty: {
@@ -353,18 +413,27 @@ function streamActiveContracts(
     })
 
     ws.on('message', (data: Buffer) => {
+      messageCount++
+      const raw = data.toString()
+      if (messageCount <= 3) {
+        console.log(`[index-templates] [WS] message #${messageCount} (${raw.length} bytes): ${raw.slice(0, 500)}`)
+      }
       try {
-        contracts.push(JSON.parse(data.toString()))
-      } catch { /* skip malformed messages */ }
+        contracts.push(JSON.parse(raw))
+      } catch (err) {
+        console.warn(`[index-templates] [WS] failed to parse message #${messageCount}: ${(err as Error).message} — raw: ${raw.slice(0, 200)}`)
+      }
     })
 
-    ws.on('close', () => {
+    ws.on('close', (code: number, reason: Buffer) => {
       clearTimeout(timer)
+      console.log(`[index-templates] [WS] closed — code=${code}, reason="${reason.toString()}", contracts=${contracts.length}, messages=${messageCount}`)
       resolve(contracts)
     })
 
     ws.on('error', (err: Error) => {
       clearTimeout(timer)
+      console.error(`[index-templates] [WS] error: ${err.message}`, err.stack)
       if (contracts.length > 0) resolve(contracts) // Return partial results
       else reject(err)
     })
@@ -431,6 +500,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       for (const n of bodyNodes) nodeMap.set(n.id, n)
     }
     const nodes = [...nodeMap.values()]
+    console.log(`[index-templates] resolved ${nodes.length} nodes: ${nodes.map(n => `${n.id}(${n.network || 'no-network'}, ${n.authMode}, json=${n.jsonApiUrl}:${n.jsonApiPort})`).join(', ')}`)
     if (nodes.length === 0) {
       return res.status(200).json({ message: 'No nodes configured', results: {} })
     }
@@ -457,12 +527,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         try {
           // Index all nodes in this network and merge their templates
           const allTemplates = new Map<string, TemplateEntry>()
+          const nonLocalNodes = netNodes.filter((n) => !isLocalhost(n.jsonApiUrl))
           const nodeResults = await Promise.allSettled(
-            netNodes.filter((n) => !isLocalhost(n.jsonApiUrl)).map((n) => indexNode(n, redis))
+            nonLocalNodes.map((n) => indexNode(n, redis))
           )
-          for (const result of nodeResults) {
+          for (let i = 0; i < nodeResults.length; i++) {
+            const result = nodeResults[i]
             if (result.status === 'fulfilled') {
               for (const t of result.value) allTemplates.set(t.templateId, t)
+            } else {
+              console.error(`[index-templates] ${network}/${nonLocalNodes[i].id}: indexNode rejected — ${result.reason}`)
             }
           }
           const templates = [...allTemplates.values()]
@@ -488,9 +562,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     )
 
     // Store cron metadata + cooldown timestamp
+    const durationMs = Date.now() - startTime
+    console.log(`[index-templates] completed in ${durationMs}ms — results: ${JSON.stringify(results)}`)
     const meta = {
       lastRun: new Date().toISOString(),
-      durationMs: Date.now() - startTime,
+      durationMs,
       results,
     }
     await Promise.all([
