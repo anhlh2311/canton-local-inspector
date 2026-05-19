@@ -36,8 +36,7 @@ export async function fetchServerNodes(): Promise<NodeConfig[]> {
     id: string; name: string; color: string; network?: string
     jsonApiUrl: string; jsonApiPort: number
     validatorApiUrl: string; validatorApiPort: number; ledgerApiPort: number
-    authMode: string; tokenUrl?: string; clientId?: string
-    audience?: string; validatorAudience?: string
+    authMode: string
     adminUser?: string; globalSynchronizerId?: string
   }> }>('/api/nodes')
 
@@ -57,11 +56,10 @@ export async function fetchServerNodes(): Promise<NodeConfig[]> {
     auth: n.authMode === 'oauth2'
       ? {
           mode: 'oauth2' as const,
-          tokenUrl: n.tokenUrl || '',
-          clientId: n.clientId || '',
+          tokenUrl: '',
+          clientId: '',
           clientSecret: '',
-          audience: n.audience || '',
-          validatorAudience: n.validatorAudience,
+          audience: '',
           _hasServerCredentials: true,
           credentialOwnership: 'server' as const,
         }
@@ -69,13 +67,13 @@ export async function fetchServerNodes(): Promise<NodeConfig[]> {
           mode: 'shared-secret' as const,
           userId: 'ledger-api-user',
           secret: '',
-          audience: n.audience || 'https://canton.network.global',
+          audience: 'https://canton.network.global',
           issuer: 'unsafe-auth',
         },
   }))
 }
 
-/** Save a node config server-side in Redis (admin only, shared across users). */
+/** Save a node config server-side in Redis (admin only, shared across users). Credentials are stored separately. */
 export async function saveServerNodeConfig(node: NodeConfig): Promise<void> {
   await axios.post('/api/nodes', {
     id: node.id,
@@ -88,10 +86,6 @@ export async function saveServerNodeConfig(node: NodeConfig): Promise<void> {
     validatorApiPort: node.validatorApiPort,
     ledgerApiPort: node.ledgerApiPort,
     authMode: node.auth.mode,
-    tokenUrl: node.auth.mode === 'oauth2' ? node.auth.tokenUrl : undefined,
-    clientId: node.auth.mode === 'oauth2' ? node.auth.clientId : undefined,
-    audience: node.auth.mode === 'oauth2' ? node.auth.audience : undefined,
-    validatorAudience: node.auth.mode === 'oauth2' ? node.auth.validatorAudience : undefined,
     adminUser: node.adminUser,
     globalSynchronizerId: node.globalSynchronizerId,
   })

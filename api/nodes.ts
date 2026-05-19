@@ -41,7 +41,7 @@ async function verifySession(req: VercelRequest): Promise<{ authenticated: boole
   }
 }
 
-// Sanitized node config — never includes clientSecret
+// Connection & metadata only — OAuth2 credentials live in canton:creds:{nodeId}
 interface StoredNodeConfig {
   id: string
   name: string
@@ -53,12 +53,6 @@ interface StoredNodeConfig {
   validatorApiPort: number
   ledgerApiPort: number
   authMode: string
-  // OAuth2 non-secret fields
-  tokenUrl?: string
-  clientId?: string
-  audience?: string
-  validatorAudience?: string
-  // Metadata
   adminUser?: string
   globalSynchronizerId?: string
 }
@@ -112,10 +106,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       validatorApiPort: Number(body.validatorApiPort) || 0,
       ledgerApiPort: Number(body.ledgerApiPort) || 0,
       authMode: body.authMode || 'oauth2',
-      tokenUrl: body.tokenUrl || undefined,
-      clientId: body.clientId || undefined,
-      audience: body.audience || undefined,
-      validatorAudience: body.validatorAudience || undefined,
       adminUser: body.adminUser || undefined,
       globalSynchronizerId: body.globalSynchronizerId || undefined,
     }
