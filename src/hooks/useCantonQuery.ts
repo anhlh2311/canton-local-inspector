@@ -1,8 +1,11 @@
+import { useEffect } from 'react'
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query'
-import { useAtomValue } from 'jotai'
-import { selectedNodeAtom, refreshIntervalAtom } from '@/stores/nodeStore'
+import { useAtomValue, useSetAtom } from 'jotai'
+import { selectedNodeAtom, refreshIntervalAtom, nodesAtom } from '@/stores/nodeStore'
 import * as api from '@/api/canton'
 import type { ActiveContract, ActiveContractsRequest, NodeConfig } from '@/types/canton'
+
+const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
 
 async function getToken(node: NodeConfig) {
   return api.getAuthToken(node)
@@ -27,6 +30,25 @@ export function useEnsureReadPermissions() {
     },
     staleTime: Infinity,
   })
+}
+
+/** Fetch server-stored nodes on mount and merge into local node list. */
+let serverNodesFetched = false
+export function useServerNodes() {
+  const setNodes = useSetAtom(nodesAtom)
+  useEffect(() => {
+    if (!isVercel || serverNodesFetched) return
+    serverNodesFetched = true
+    api.fetchServerNodes().then((serverNodes) => {
+      if (!serverNodes.length) return
+      setNodes((prev) => {
+        const localOnly = prev.filter((n) => !serverNodes.some((sn) => sn.id === n.id))
+        return [...localOnly, ...serverNodes]
+      })
+    }).catch(() => {
+      // Server nodes unavailable — keep local state as-is
+    })
+  }, [setNodes])
 }
 
 export function useVersion() {

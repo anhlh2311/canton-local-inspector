@@ -3,9 +3,10 @@ import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
-import { useEnsureReadPermissions } from '@/hooks/useCantonQuery'
+import { useEnsureReadPermissions, useServerNodes } from '@/hooks/useCantonQuery'
 
 export function MainLayout() {
+  useServerNodes()
   useEnsureReadPermissions()
   const [mobileOpen, setMobileOpen] = useState(false)
 

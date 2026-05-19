@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { nodesAtom, refreshIntervalAtom, selectedNodeIdAtom, autoQueryContractsAtom } from '@/stores/nodeStore'
 import { DEFAULT_NODES } from '@/constants/nodes'
-import { saveNodeCredentials, deleteNodeCredentials, triggerIndexRefresh } from '@/api/canton'
+import { saveNodeCredentials, deleteNodeCredentials, triggerIndexRefresh, saveServerNodeConfig, deleteServerNodeConfig } from '@/api/canton'
 import { useCronMeta } from '@/hooks/useCantonQuery'
 import { useAuth } from '@/context/AuthContext'
 import { useQueryClient } from '@tanstack/react-query'
@@ -181,41 +181,44 @@ function NodeConfigCard({
     }
 
     if (isVercel && form.auth.mode === 'oauth2') {
-      if (isAdmin && secretInput) {
-        // Admin: store credentials server-side in Redis
+      if (isAdmin) {
+        // Admin: store node config + credentials server-side in Redis (shared across users)
         try {
           setSaving(true)
-          await saveNodeCredentials(form.id, {
-            tokenUrl: form.auth.tokenUrl,
-            clientId: form.auth.clientId,
-            clientSecret: secretInput,
-            audience: form.auth.audience,
-            validatorAudience: form.auth.validatorAudience,
-          })
-          setHasServerCreds(true)
-          const sanitizedForm: NodeConfig = {
+          const serverForm: NodeConfig = {
             ...form,
+            _serverStored: true,
             auth: { ...form.auth, clientSecret: '', _hasServerCredentials: true, credentialOwnership: 'server' },
           }
-          onUpdate(sanitizedForm)
-          setSecretInput('')
+          // Save node config to server (always, so URL/port changes are persisted)
+          await saveServerNodeConfig(serverForm)
+          // Save credentials if a new secret was provided
+          if (secretInput) {
+            await saveNodeCredentials(form.id, {
+              tokenUrl: form.auth.tokenUrl,
+              clientId: form.auth.clientId,
+              clientSecret: secretInput,
+              audience: form.auth.audience,
+              validatorAudience: form.auth.validatorAudience,
+            })
+            setHasServerCreds(true)
+            setSecretInput('')
+          }
+          onUpdate(serverForm)
         } catch (err) {
-          const msg = err instanceof Error ? err.message : 'Failed to save credentials'
+          const msg = err instanceof Error ? err.message : 'Failed to save node configuration'
           setSaveError(msg)
           return
         } finally {
           setSaving(false)
         }
-      } else if (!isAdmin) {
+      } else {
         // Editor: store credentials client-side only (secret never sent to backend)
         const editorForm: NodeConfig = {
           ...form,
           auth: { ...form.auth, credentialOwnership: 'client' },
         }
         onUpdate(editorForm)
-      } else {
-        // Admin saving non-secret fields
-        onUpdate(form)
       }
     } else {
       // Local dev or shared-secret: store as-is
@@ -405,7 +408,7 @@ function NodeConfigCard({
             {isVercel && form.auth.mode === 'oauth2' && (
               <div className="rounded-md bg-muted/50 p-2 text-[10px] text-muted-foreground">
                 {isAdmin ? (
-                  <>Credentials stored <strong>server-side</strong> in Redis. Shared across all users.</>
+                  <>Node configuration and credentials stored <strong>server-side</strong> in Redis. Shared across all users.</>
                 ) : (
                   <>Credentials stored <strong>in your browser only</strong>. The client secret is never sent to our server — token exchange happens directly with the OAuth provider.</>
                 )}
@@ -598,9 +601,10 @@ export function SettingsPage() {
 
   const handleDeleteNode = (index: number) => {
     const node = nodes[index]
-    // Clean up server-side credentials if stored
+    // Clean up server-side storage (credentials + node config)
     if (isVercel && node.auth.mode === 'oauth2') {
       deleteNodeCredentials(node.id).catch(() => {})
+      deleteServerNodeConfig(node.id).catch(() => {})
     }
     setNodes(nodes.filter((_, i) => i !== index))
   }

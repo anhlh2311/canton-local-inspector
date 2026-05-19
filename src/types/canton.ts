@@ -44,6 +44,8 @@ export interface NodeConfig {
   // Optional metadata
   /** True for nodes from VITE_NODES env var or quickstart defaults (not user-added) */
   _preconfigured?: boolean
+  /** True for nodes stored server-side in Redis (shared across all users) */
+  _serverStored?: boolean
   adminUser?: string
   globalSynchronizerId?: string
 }

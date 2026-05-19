@@ -30,6 +30,78 @@ export async function deleteNodeCredentials(nodeId: string): Promise<void> {
   await axios.delete('/api/auth/credentials', { params: { nodeId } })
 }
 
+/** Fetch all server-stored node configs (shared across users). */
+export async function fetchServerNodes(): Promise<NodeConfig[]> {
+  const res = await axios.get<{ nodes: Array<{
+    id: string; name: string; color: string; network?: string
+    jsonApiUrl: string; jsonApiPort: number
+    validatorApiUrl: string; validatorApiPort: number; ledgerApiPort: number
+    authMode: string; tokenUrl?: string; clientId?: string
+    audience?: string; validatorAudience?: string
+    adminUser?: string; globalSynchronizerId?: string
+  }> }>('/api/nodes')
+
+  return res.data.nodes.map((n) => ({
+    id: n.id,
+    name: n.name,
+    color: n.color,
+    network: n.network as NodeConfig['network'],
+    jsonApiUrl: n.jsonApiUrl,
+    jsonApiPort: n.jsonApiPort,
+    validatorApiUrl: n.validatorApiUrl,
+    validatorApiPort: n.validatorApiPort,
+    ledgerApiPort: n.ledgerApiPort,
+    _serverStored: true,
+    adminUser: n.adminUser,
+    globalSynchronizerId: n.globalSynchronizerId,
+    auth: n.authMode === 'oauth2'
+      ? {
+          mode: 'oauth2' as const,
+          tokenUrl: n.tokenUrl || '',
+          clientId: n.clientId || '',
+          clientSecret: '',
+          audience: n.audience || '',
+          validatorAudience: n.validatorAudience,
+          _hasServerCredentials: true,
+          credentialOwnership: 'server' as const,
+        }
+      : {
+          mode: 'shared-secret' as const,
+          userId: 'ledger-api-user',
+          secret: '',
+          audience: n.audience || 'https://canton.network.global',
+          issuer: 'unsafe-auth',
+        },
+  }))
+}
+
+/** Save a node config server-side in Redis (admin only, shared across users). */
+export async function saveServerNodeConfig(node: NodeConfig): Promise<void> {
+  await axios.post('/api/nodes', {
+    id: node.id,
+    name: node.name,
+    color: node.color,
+    network: node.network,
+    jsonApiUrl: node.jsonApiUrl,
+    jsonApiPort: node.jsonApiPort,
+    validatorApiUrl: node.validatorApiUrl,
+    validatorApiPort: node.validatorApiPort,
+    ledgerApiPort: node.ledgerApiPort,
+    authMode: node.auth.mode,
+    tokenUrl: node.auth.mode === 'oauth2' ? node.auth.tokenUrl : undefined,
+    clientId: node.auth.mode === 'oauth2' ? node.auth.clientId : undefined,
+    audience: node.auth.mode === 'oauth2' ? node.auth.audience : undefined,
+    validatorAudience: node.auth.mode === 'oauth2' ? node.auth.validatorAudience : undefined,
+    adminUser: node.adminUser,
+    globalSynchronizerId: node.globalSynchronizerId,
+  })
+}
+
+/** Remove a node config from server-side storage (admin only). */
+export async function deleteServerNodeConfig(nodeId: string): Promise<void> {
+  await axios.delete('/api/nodes', { params: { nodeId } })
+}
+
 // ---- Template Index (cron-backed) ----
 
 export interface TemplateIndexEntry {
