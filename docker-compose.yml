@@ -23,7 +23,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     env_file:
-      - .env
+      - .env.local
     environment:
       DATABASE_URL: postgresql://canton:canton@postgres:5432/canton_inspector
       VITE_DEPLOY_ENV: local
