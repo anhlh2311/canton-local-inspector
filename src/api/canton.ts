@@ -710,7 +710,14 @@ export async function getParticipantId(node: NodeConfig, token: string): Promise
 
 // ---- User Rights ----
 
-export async function grantReadAsAnyParty(node: NodeConfig, token: string, userId: string = 'ledger-api-user'): Promise<void> {
+export async function grantReadAsAnyParty(node: NodeConfig, token: string, userId?: string): Promise<void> {
+  if (!userId) {
+    if (node.auth.mode === 'oauth2') {
+      console.warn(`[Canton Inspector] Admin User is required for OAuth2 node "${node.name}", skipping grantReadAsAnyParty`)
+      return
+    }
+    userId = 'ledger-api-user'
+  }
   const client = createJsonApiClient(node, token)
   try {
     await client.post(`/v2/users/${encodeURIComponent(userId)}/rights`, {

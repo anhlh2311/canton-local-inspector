@@ -175,6 +175,11 @@ function NodeConfigCard({
   const handleSave = async () => {
     setSaveError(null)
 
+    if (form.auth.mode === 'oauth2' && !form.adminUser) {
+      setSaveError('Admin User is required when using OAuth2 authentication')
+      return
+    }
+
     if (isVercel && form.auth.mode === 'oauth2') {
       if (isAdmin && secretInput) {
         // Admin: store credentials server-side in Redis
@@ -371,8 +376,14 @@ function NodeConfigCard({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] text-muted-foreground">Admin User (optional)</label>
-                <Input value={form.adminUser ?? ''} onChange={(e) => setForm({ ...form, adminUser: e.target.value || undefined })} />
+                <label className="text-[10px] text-muted-foreground">
+                  Admin User {form.auth.mode === 'oauth2' ? <span className="text-destructive">*</span> : '(optional)'}
+                </label>
+                <Input
+                  value={form.adminUser ?? ''}
+                  onChange={(e) => setForm({ ...form, adminUser: e.target.value || undefined })}
+                  className={form.auth.mode === 'oauth2' && !form.adminUser ? 'border-destructive' : ''}
+                />
               </div>
               <div>
                 <label className="text-[10px] text-muted-foreground">Global Synchronizer ID (optional)</label>
