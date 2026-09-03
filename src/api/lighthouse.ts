@@ -45,8 +45,13 @@ export async function fetchTransactionByUpdateId(
       { timeout: 30000 },
     )
     const data = res.data
-    const verdict = data.events?.verdict
-    if (!verdict?.traffic_summary || !verdict.transaction_views?.views) {
+    const verdict = data?.events?.verdict
+    if (
+      !verdict?.traffic_summary
+      || !Array.isArray(verdict.traffic_summary.envelope_traffic_summaries)
+      || !Array.isArray(verdict.transaction_views?.views)
+      || !data?.transaction
+    ) {
       throw new Error('Response has no traffic summary')
     }
     return data

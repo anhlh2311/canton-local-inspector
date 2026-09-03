@@ -44,6 +44,7 @@ export function TrafficAttributionPage() {
   const [response, setResponse] = useState<LighthouseTransactionResponse | null>(null)
   const [checked, setChecked] = useState<string[]>([])
   const searchGenerationRef = useRef(0)
+  const didBootstrapRef = useRef(false)
 
   const verdict = response?.events.verdict
   const views = useMemo(() => verdict?.transaction_views?.views ?? [], [verdict])
@@ -99,6 +100,8 @@ export function TrafficAttributionPage() {
   }, [carryTicks, remembered, setSearchParams])
 
   useEffect(() => {
+    if (didBootstrapRef.current) return
+    didBootstrapRef.current = true
     const qNet = searchParams.get('network')
     const qId = searchParams.get('updateId')
     if (isLighthouseNetwork(qNet) && qNet !== network) setNetwork(qNet)

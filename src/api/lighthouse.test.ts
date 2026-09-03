@@ -136,9 +136,39 @@ describe('fetchTransactionByUpdateId', () => {
     )
   })
 
+  it('throws when envelope_traffic_summaries is missing', async () => {
+    const data = validResponse()
+    data.events.verdict!.traffic_summary!.envelope_traffic_summaries = undefined as never
+    mockedGet.mockResolvedValue({ data })
+
+    await expect(fetchTransactionByUpdateId('1220abc', 'devnet')).rejects.toThrow(
+      'Response has no traffic summary',
+    )
+  })
+
   it('throws when transaction_views.views is missing', async () => {
     const data = validResponse()
     data.events.verdict!.transaction_views = null
+    mockedGet.mockResolvedValue({ data })
+
+    await expect(fetchTransactionByUpdateId('1220abc', 'devnet')).rejects.toThrow(
+      'Response has no traffic summary',
+    )
+  })
+
+  it('throws when transaction_views.views is not an array', async () => {
+    const data = validResponse()
+    data.events.verdict!.transaction_views!.views = {} as never
+    mockedGet.mockResolvedValue({ data })
+
+    await expect(fetchTransactionByUpdateId('1220abc', 'devnet')).rejects.toThrow(
+      'Response has no traffic summary',
+    )
+  })
+
+  it('throws when transaction is missing', async () => {
+    const data = validResponse()
+    data.transaction = undefined as never
     mockedGet.mockResolvedValue({ data })
 
     await expect(fetchTransactionByUpdateId('1220abc', 'devnet')).rejects.toThrow(
