@@ -5,6 +5,7 @@ import {
   Users,
   Package,
   FileCode,
+  Gauge,
   Settings,
   Shield,
   LogOut,
@@ -21,6 +22,7 @@ const navItems = [
   { to: '/parties', icon: Users, label: 'Parties' },
   { to: '/packages', icon: Package, label: 'Packages' },
   { to: '/contracts', icon: FileCode, label: 'Contracts' },
+  { to: '/traffic', icon: Gauge, label: 'Traffic (CIP-104)' },
   { to: '/settings', icon: Settings, label: 'Settings', requireEditor: true },
 ]
 
