@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAtom } from 'jotai'
 import { Gauge, RefreshCw, Search } from 'lucide-react'
@@ -43,6 +43,7 @@ export function TrafficAttributionPage() {
   const [notFound, setNotFound] = useState(false)
   const [response, setResponse] = useState<LighthouseTransactionResponse | null>(null)
   const [checked, setChecked] = useState<string[]>([])
+  const searchGenerationRef = useRef(0)
 
   const verdict = response?.events.verdict
   const views = useMemo(() => verdict?.transaction_views?.views ?? [], [verdict])
@@ -62,6 +63,7 @@ export function TrafficAttributionPage() {
   const runSearch = useCallback(async (id: string, net: LighthouseNetwork) => {
     const trimmed = id.trim()
     if (!trimmed) return
+    const generation = ++searchGenerationRef.current
     setSearching(true)
     setSearchError(null)
     setNotFound(false)
@@ -69,6 +71,7 @@ export function TrafficAttributionPage() {
     setChecked([])
     try {
       const data = await fetchTransactionByUpdateId(trimmed, net)
+      if (generation !== searchGenerationRef.current) return
       const v = data.events.verdict
       const nextConfirmers = uniqueConfirmers(v?.transaction_views?.views ?? [])
       const nextChecked = resolveFeaturedApps({
@@ -81,6 +84,7 @@ export function TrafficAttributionPage() {
       setChecked(nextChecked)
       setSearchParams({ updateId: trimmed, network: net }, { replace: true })
     } catch (err) {
+      if (generation !== searchGenerationRef.current) return
       const message = err instanceof Error ? err.message : 'Failed to fetch transaction'
       if (message === 'Transaction not found on this network') {
         setNotFound(true)
@@ -88,7 +92,9 @@ export function TrafficAttributionPage() {
         setSearchError(message)
       }
     } finally {
-      setSearching(false)
+      if (generation === searchGenerationRef.current) {
+        setSearching(false)
+      }
     }
   }, [carryTicks, remembered, setSearchParams])
 
