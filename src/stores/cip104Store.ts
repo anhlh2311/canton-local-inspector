@@ -1,6 +1,5 @@
 import { atomWithStorage } from 'jotai/utils'
-
-export type LighthouseNetwork = 'devnet' | 'mainnet'
+import type { LighthouseNetwork } from '@/api/lighthouse'
 
 export const lighthouseNetworkAtom = atomWithStorage<LighthouseNetwork>(
   'canton-inspector-cip104-network',
