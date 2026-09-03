@@ -49,6 +49,10 @@ export async function fetchTransactionByUpdateId(
     if (
       !verdict?.traffic_summary
       || !Array.isArray(verdict.traffic_summary.envelope_traffic_summaries)
+      || typeof verdict.traffic_summary.total_traffic_cost !== 'number'
+      || !verdict.traffic_summary.envelope_traffic_summaries.every(
+        (summary) => typeof summary?.traffic_cost === 'number',
+      )
       || !Array.isArray(verdict.transaction_views?.views)
       || !data?.transaction
     ) {

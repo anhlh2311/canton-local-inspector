@@ -7,7 +7,6 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LighthouseTransactionResponse } from '@/types/lighthouse'
 import { fetchTransactionByUpdateId } from '@/api/lighthouse'
-import { TrafficAttributionPage } from './TrafficAttributionPage'
 
 vi.mock('@/api/lighthouse', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/lighthouse')>()
@@ -49,6 +48,16 @@ vi.mock('@/components/ui/select', async () => {
 vi.mock('@/components/common/JsonViewer', () => ({
   JsonViewer: () => null,
 }))
+
+const rememberedParty = 'remembered-party::1220abc'
+localStorage.setItem('canton-inspector-cip104-network', JSON.stringify('mainnet'))
+localStorage.setItem('canton-inspector-cip104-carry-ticks', JSON.stringify(true))
+localStorage.setItem(
+  'canton-inspector-cip104-featured-parties',
+  JSON.stringify([rememberedParty]),
+)
+const { TrafficAttributionPage } = await import('./TrafficAttributionPage')
+localStorage.clear()
 
 const mockedFetch = vi.mocked(fetchTransactionByUpdateId)
 
@@ -95,6 +104,32 @@ describe('TrafficAttributionPage searches', () => {
 
   afterEach(() => {
     cleanup()
+    localStorage.clear()
+  })
+
+  it('hydrates stored CIP-104 preferences before bootstrapping an updateId search', async () => {
+    localStorage.setItem('canton-inspector-cip104-network', JSON.stringify('mainnet'))
+    localStorage.setItem('canton-inspector-cip104-carry-ticks', JSON.stringify(true))
+    localStorage.setItem(
+      'canton-inspector-cip104-featured-parties',
+      JSON.stringify([rememberedParty]),
+    )
+    const response = validResponse('stored-preferences', 3)
+    response.events.verdict!.transaction_views!.views[0].confirming_parties = [
+      { parties: [rememberedParty], threshold: 1 },
+    ]
+    mockedFetch.mockResolvedValue(response)
+
+    render(
+      <Provider>
+        <MemoryRouter initialEntries={['/?updateId=stored-preferences']}>
+          <TrafficAttributionPage />
+        </MemoryRouter>
+      </Provider>,
+    )
+
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledWith('stored-preferences', 'mainnet'))
+    expect((await screen.findByRole('checkbox') as HTMLInputElement).checked).toBe(true)
   })
 
   it('discards an older response and keeps searching for the latest request', async () => {
