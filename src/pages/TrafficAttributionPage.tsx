@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAtom } from 'jotai'
 import { Gauge, RefreshCw, Search } from 'lucide-react'
@@ -21,6 +21,7 @@ import {
   rememberedFeaturedPartyIdsAtom,
 } from '@/stores/cip104Store'
 import type { LighthouseTransactionResponse } from '@/types/lighthouse'
+import { cn } from '@/lib/utils'
 
 function isLighthouseNetwork(v: string | null): v is LighthouseNetwork {
   return v === 'devnet' || v === 'mainnet'
@@ -28,6 +29,30 @@ function isLighthouseNetwork(v: string | null): v is LighthouseNetwork {
 
 function hasVisibleEvents(events: LighthouseTransactionResponse['events']): boolean {
   return Object.keys(events).some((k) => k !== 'verdict')
+}
+
+function MetaItem({
+  label,
+  value,
+  valueClassName,
+  valueTestId,
+}: {
+  label: string
+  value: ReactNode
+  valueClassName?: string
+  valueTestId?: string
+}) {
+  return (
+    <div className="flex items-baseline gap-1.5 text-xs min-w-0">
+      <span className="font-semibold text-foreground shrink-0">{label}</span>
+      <span
+        data-testid={valueTestId}
+        className={cn('font-mono font-medium break-all', valueClassName)}
+      >
+        {value}
+      </span>
+    </div>
+  )
 }
 
 export function TrafficAttributionPage() {
@@ -196,32 +221,71 @@ export function TrafficAttributionPage() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Transaction</CardTitle>
-              <CardDescription className="flex flex-wrap gap-2 items-center">
-                <Badge variant="outline" className="text-[10px]">{network}</Badge>
-                <span className="text-xs">round {response.transaction.round}</span>
-                <span className="text-xs">{verdict.record_time}</span>
-                <span className="text-xs">{attribution.total.toLocaleString()} B</span>
-                {response.transaction.traffic_cost?.cost_usd != null && (
-                  <span className="text-xs">${response.transaction.traffic_cost.cost_usd}</span>
-                )}
-                <a
-                  className="text-xs text-primary underline"
-                  href={lighthouseExplorerUrl(network, response.transaction.update_id)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open in Lighthouse
-                </a>
-              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 text-xs text-muted-foreground">
-              <div>Submitter: {partyHint(verdict.submitting_parties?.[0] ?? 'unknown')}</div>
-              <div>
-                App envelopes {attribution.appEnvelopeTraffic.toLocaleString()} B · leftover {attribution.leftover.toLocaleString()} B · attributed {attribution.weightSum.toLocaleString()} B
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <Badge variant="outline" className="text-[10px] capitalize">{network}</Badge>
+                <MetaItem
+                  label="Round"
+                  value={response.transaction.round}
+                  valueClassName="text-violet-600 dark:text-violet-400"
+                  valueTestId="tx-round"
+                />
+                <MetaItem
+                  label="Recorded"
+                  value={verdict.record_time}
+                  valueClassName="text-muted-foreground"
+                />
+              </div>
+              <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+                <MetaItem
+                  label="Total"
+                  value={`${attribution.total.toLocaleString()} B`}
+                  valueClassName="text-sky-600 dark:text-sky-400"
+                />
+                {response.transaction.traffic_cost?.cost_usd != null && (
+                  <MetaItem
+                    label="Cost"
+                    value={`$${response.transaction.traffic_cost.cost_usd}`}
+                    valueClassName="text-emerald-600 dark:text-emerald-400"
+                  />
+                )}
+              </div>
+              <MetaItem
+                label="Submitter"
+                value={partyHint(verdict.submitting_parties?.[0] ?? 'unknown')}
+                valueClassName="text-foreground"
+              />
+              <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+                <MetaItem
+                  label="App envelopes"
+                  value={`${attribution.appEnvelopeTraffic.toLocaleString()} B`}
+                  valueClassName="text-sky-600 dark:text-sky-400"
+                />
+                <MetaItem
+                  label="Leftover"
+                  value={`${attribution.leftover.toLocaleString()} B`}
+                  valueClassName="text-amber-600 dark:text-amber-400"
+                />
+                <MetaItem
+                  label="Attributed"
+                  value={`${attribution.weightSum.toLocaleString()} B`}
+                  valueClassName="text-emerald-600 dark:text-emerald-400"
+                />
               </div>
               {!hasVisibleEvents(response.events) && (
-                <p>Events hidden (privacy). Attribution uses the mediator verdict.</p>
+                <p className="text-xs text-muted-foreground">
+                  Events hidden (privacy). Attribution uses the mediator verdict.
+                </p>
               )}
+              <a
+                className="inline-flex text-xs font-medium text-primary underline underline-offset-2"
+                href={lighthouseExplorerUrl(network, response.transaction.update_id)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open in Lighthouse
+              </a>
             </CardContent>
           </Card>
 

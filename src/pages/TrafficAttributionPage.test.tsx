@@ -196,7 +196,7 @@ describe('TrafficAttributionPage searches', () => {
       await second.promise
     })
 
-    expect(await screen.findByText('round 2')).toBeTruthy()
-    expect(screen.queryByText('round 1')).toBeNull()
+    expect(await screen.findByTestId('tx-round')).toHaveProperty('textContent', '2')
+    expect(screen.queryByTestId('tx-round')?.textContent).not.toBe('1')
   })
 })
