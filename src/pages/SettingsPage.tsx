@@ -656,8 +656,8 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Template Index (Vercel only) */}
-      {isVercel && <TemplateIndexStatus nodes={nodes} />}
+      {/* Template Index */}
+      <TemplateIndexStatus nodes={nodes} />
 
       <Separator />
 

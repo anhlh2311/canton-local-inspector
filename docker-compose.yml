@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: canton_inspector
+      POSTGRES_USER: canton
+      POSTGRES_PASSWORD: canton
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U canton -d canton_inspector"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    ports:
+      - "3888:3000"
+      - "3889:3443"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql://canton:canton@postgres:5432/canton_inspector
+      VITE_DEPLOY_ENV: local
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

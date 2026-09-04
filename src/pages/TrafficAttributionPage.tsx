@@ -1,0 +1,310 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { useAtom } from 'jotai'
+import { Gauge, RefreshCw, Search } from 'lucide-react'
+import { fetchTransactionByUpdateId, lighthouseExplorerUrl, type LighthouseNetwork } from '@/api/lighthouse'
+import { ClearableInput } from '@/components/common/ClearableInput'
+import { EmptyState } from '@/components/common/EmptyState'
+import { ErrorDisplay } from '@/components/common/ErrorDisplay'
+import { IdDisplay } from '@/components/common/IdDisplay'
+import { JsonViewer } from '@/components/common/JsonViewer'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { attributeTraffic, uniqueConfirmers, partyHint } from '@/lib/cip104'
+import { FEATURED_APP_MODE, nextRemembered, resolveFeaturedApps } from '@/lib/featuredApps'
+import {
+  carryTicksAtom,
+  lighthouseNetworkAtom,
+  rememberedFeaturedPartyIdsAtom,
+} from '@/stores/cip104Store'
+import type { LighthouseTransactionResponse } from '@/types/lighthouse'
+import { truncateId } from '@/lib/utils'
+
+function isLighthouseNetwork(v: string | null): v is LighthouseNetwork {
+  return v === 'devnet' || v === 'mainnet'
+}
+
+function hasVisibleEvents(events: LighthouseTransactionResponse['events']): boolean {
+  return Object.keys(events).some((k) => k !== 'verdict')
+}
+
+export function TrafficAttributionPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [network, setNetwork] = useAtom(lighthouseNetworkAtom)
+  const [carryTicks, setCarryTicks] = useAtom(carryTicksAtom)
+  const [remembered, setRemembered] = useAtom(rememberedFeaturedPartyIdsAtom)
+
+  const [updateId, setUpdateId] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [notFound, setNotFound] = useState(false)
+  const [response, setResponse] = useState<LighthouseTransactionResponse | null>(null)
+  const [checked, setChecked] = useState<string[]>([])
+  const searchGenerationRef = useRef(0)
+  const didBootstrapRef = useRef(false)
+
+  const verdict = response?.events.verdict
+  const views = useMemo(() => verdict?.transaction_views?.views ?? [], [verdict])
+  const traffic = verdict?.traffic_summary
+  const confirmers = useMemo(() => uniqueConfirmers(views), [views])
+
+  const attribution = useMemo(() => {
+    if (!traffic) return null
+    return attributeTraffic({
+      traffic,
+      views,
+      featuredPartyIds: checked,
+      activityWeight: 1,
+    })
+  }, [traffic, views, checked])
+
+  const runSearch = useCallback(async (id: string, net: LighthouseNetwork) => {
+    const trimmed = id.trim()
+    if (!trimmed) return
+    const generation = ++searchGenerationRef.current
+    setSearching(true)
+    setSearchError(null)
+    setNotFound(false)
+    setResponse(null)
+    setChecked([])
+    try {
+      const data = await fetchTransactionByUpdateId(trimmed, net)
+      if (generation !== searchGenerationRef.current) return
+      const v = data.events.verdict
+      const nextConfirmers = uniqueConfirmers(v?.transaction_views?.views ?? [])
+      const nextChecked = resolveFeaturedApps({
+        mode: FEATURED_APP_MODE,
+        confirmers: nextConfirmers,
+        remembered,
+        carryTicks,
+      })
+      setResponse(data)
+      setChecked(nextChecked)
+      setSearchParams({ updateId: trimmed, network: net }, { replace: true })
+    } catch (err) {
+      if (generation !== searchGenerationRef.current) return
+      const message = err instanceof Error ? err.message : 'Failed to fetch transaction'
+      if (message === 'Transaction not found on this network') {
+        setNotFound(true)
+      } else {
+        setSearchError(message)
+      }
+    } finally {
+      if (generation === searchGenerationRef.current) {
+        setSearching(false)
+      }
+    }
+  }, [carryTicks, remembered, setSearchParams])
+
+  useEffect(() => {
+    if (didBootstrapRef.current) return
+    didBootstrapRef.current = true
+    const qNet = searchParams.get('network')
+    const qId = searchParams.get('updateId')
+    if (isLighthouseNetwork(qNet) && qNet !== network) setNetwork(qNet)
+    if (qId && !response && !searching && !searchError && !notFound) {
+      setUpdateId(qId)
+      void runSearch(qId, isLighthouseNetwork(qNet) ? qNet : network)
+    }
+    // Intentionally mount-only for query-param bootstrap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function onToggleParty(partyId: string, isOn: boolean) {
+    const next = isOn
+      ? [...checked, partyId]
+      : checked.filter((p) => p !== partyId)
+    setChecked(next)
+    setRemembered(nextRemembered(remembered, confirmers, next))
+  }
+
+  function onNetworkChange(next: LighthouseNetwork) {
+    setNetwork(next)
+    setResponse(null)
+    setSearchError(null)
+    setNotFound(false)
+    setChecked([])
+    const qId = searchParams.get('updateId')?.trim() || updateId.trim()
+    if (qId) void runSearch(qId, next)
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Traffic (CIP-104)</h2>
+        <p className="text-muted-foreground text-sm mt-1">
+          As-if CIP-0104 confirming-weight calculator. Uses Lighthouse, not the selected Canton node.
+          Rewards are not live on MainNet.
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="w-40">
+              <label className="text-xs text-muted-foreground mb-1 block">Network</label>
+              <Select value={network} onValueChange={(v) => onNetworkChange(v as LighthouseNetwork)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="devnet">DevNet</SelectItem>
+                  <SelectItem value="mainnet">MainNet</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 min-w-[16rem]">
+              <label className="text-xs text-muted-foreground mb-1 block">UpdateId</label>
+              <ClearableInput
+                placeholder="Paste UpdateId..."
+                value={updateId}
+                onChange={(v) => { setUpdateId(v); setNotFound(false) }}
+                onSubmit={() => void runSearch(updateId, network)}
+              />
+            </div>
+            <Button
+              size="sm"
+              onClick={() => void runSearch(updateId, network)}
+              disabled={searching || !updateId.trim()}
+            >
+              {searching ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Search className="h-3.5 w-3.5 mr-1.5" />}
+              {searching ? 'Searching...' : 'Search'}
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch checked={carryTicks} onCheckedChange={setCarryTicks} id="carry-ticks" />
+            <label htmlFor="carry-ticks" className="text-xs text-muted-foreground">
+              Remember featured apps for next search
+            </label>
+          </div>
+        </CardContent>
+      </Card>
+
+      {searchError && <ErrorDisplay error={searchError} />}
+      {notFound && (
+        <EmptyState
+          icon={Gauge}
+          title="Transaction not found"
+          description={`No transaction with this UpdateId on ${network}.`}
+        />
+      )}
+
+      {response && verdict && traffic && attribution && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Transaction</CardTitle>
+              <CardDescription className="flex flex-wrap gap-2 items-center">
+                <Badge variant="outline" className="text-[10px]">{network}</Badge>
+                <span className="text-xs">round {response.transaction.round}</span>
+                <span className="text-xs">{verdict.record_time}</span>
+                <span className="text-xs">{attribution.total.toLocaleString()} B</span>
+                {response.transaction.traffic_cost?.cost_usd != null && (
+                  <span className="text-xs">${response.transaction.traffic_cost.cost_usd}</span>
+                )}
+                <a
+                  className="text-xs text-primary underline"
+                  href={lighthouseExplorerUrl(network, response.transaction.update_id)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open in Lighthouse
+                </a>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-xs text-muted-foreground">
+              <div>Submitter: {partyHint(verdict.submitting_parties?.[0] ?? 'unknown')}</div>
+              <div>
+                App envelopes {attribution.appEnvelopeTraffic.toLocaleString()} B · leftover {attribution.leftover.toLocaleString()} B · attributed {attribution.weightSum.toLocaleString()} B
+              </div>
+              {!hasVisibleEvents(response.events) && (
+                <p>Events hidden (privacy). Attribution uses the mediator verdict.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Featured apps</CardTitle>
+              <CardDescription>
+                {checked.length} / {confirmers.length} ticked. Nothing is featured until you tick it.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {confirmers.map((partyId) => (
+                <label key={partyId} className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={checked.includes(partyId)}
+                    onChange={(e) => onToggleParty(partyId, e.target.checked)}
+                  />
+                  <span>
+                    <span className="font-medium">{partyHint(partyId)}</span>
+                    <span className="block font-mono text-[10px] text-muted-foreground">{truncateId(partyId, 12)}</span>
+                  </span>
+                </label>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Envelopes</CardTitle>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-muted-foreground">
+                    <th className="p-2">Views</th>
+                    <th className="p-2 text-right">Cost</th>
+                    <th className="p-2">Confirmers</th>
+                    <th className="p-2">Featured</th>
+                    <th className="p-2 text-right">Per app</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attribution.envelopes.map((e, i) => (
+                    <tr key={i} className="border-t border-border">
+                      <td className="p-2 font-mono">{e.viewIds.length ? e.viewIds.join(', ') : '(empty)'}</td>
+                      <td className="p-2 text-right font-mono">{e.cost.toLocaleString()}</td>
+                      <td className="p-2">{e.confirmers.map(partyHint).join(', ') || '—'}</td>
+                      <td className="p-2">{e.appConfirmers.map(partyHint).join(', ') || '—'}</td>
+                      <td className="p-2 text-right font-mono">{e.leftover ? 'leftover' : e.perApp.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Per-app weights</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {attribution.weights.length === 0 && (
+                <p className="text-xs text-muted-foreground">Tick featured confirmers to attribute leftover traffic.</p>
+              )}
+              {attribution.weights.map((w) => (
+                <div key={w.partyId} className="flex items-center justify-between gap-2 text-sm">
+                  <div>
+                    <div className="font-medium">{w.hint}</div>
+                    <IdDisplay id={w.partyId} truncate={12} />
+                  </div>
+                  <span className="font-mono">{w.weight.toLocaleString()}</span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <details>
+            <summary className="text-xs text-muted-foreground cursor-pointer">Raw JSON</summary>
+            <JsonViewer data={response} />
+          </details>
+        </div>
+      )}
+    </div>
+  )
+}

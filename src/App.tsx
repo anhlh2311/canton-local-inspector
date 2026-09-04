@@ -9,6 +9,7 @@ import { SynchronizerPage } from '@/pages/SynchronizerPage'
 import { PartiesPage } from '@/pages/PartiesPage'
 import { PackagesPage } from '@/pages/PackagesPage'
 import { ContractsPage } from '@/pages/ContractsPage'
+import { TrafficAttributionPage } from '@/pages/TrafficAttributionPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { UsersPage } from '@/pages/admin/UsersPage'
 
@@ -27,6 +28,7 @@ export function App() {
           <Route path="/parties" element={<PartiesPage />} />
           <Route path="/packages" element={<PackagesPage />} />
           <Route path="/contracts" element={<ContractsPage />} />
+          <Route path="/traffic" element={<TrafficAttributionPage />} />
         </Route>
 
         {/* Editor+ routes */}
