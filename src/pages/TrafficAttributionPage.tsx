@@ -14,7 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { attributeTraffic, uniqueConfirmers, partyHint } from '@/lib/cip104'
-import { FEATURED_APP_MODE, nextRemembered, resolveFeaturedApps } from '@/lib/featuredApps'
+import { FEATURED_APP_MODE, featuredAppCandidates, nextRemembered, resolveFeaturedApps } from '@/lib/featuredApps'
 import {
   carryTicksAtom,
   lighthouseNetworkAtom,
@@ -50,6 +50,7 @@ export function TrafficAttributionPage() {
   const views = useMemo(() => verdict?.transaction_views?.views ?? [], [verdict])
   const traffic = verdict?.traffic_summary
   const confirmers = useMemo(() => uniqueConfirmers(views), [views])
+  const featuredCandidates = useMemo(() => featuredAppCandidates(confirmers), [confirmers])
 
   const attribution = useMemo(() => {
     if (!traffic) return null
@@ -114,6 +115,7 @@ export function TrafficAttributionPage() {
   }, [])
 
   function onToggleParty(partyId: string, isOn: boolean) {
+    if (!featuredCandidates.includes(partyId)) return
     const next = isOn
       ? [...checked, partyId]
       : checked.filter((p) => p !== partyId)
@@ -228,11 +230,12 @@ export function TrafficAttributionPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Featured apps</CardTitle>
               <CardDescription>
-                {checked.length} / {confirmers.length} ticked. Nothing is featured until you tick it.
+                {checked.length} / {featuredCandidates.length} ticked. Nothing is featured until you tick it.
+                DSO is the Decentralized Synchronizer Operator and is not a featured app.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              {confirmers.map((partyId) => (
+              {featuredCandidates.map((partyId) => (
                 <label key={partyId} className="flex items-start gap-2 text-sm">
                   <input
                     type="checkbox"

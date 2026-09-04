@@ -132,6 +132,28 @@ describe('TrafficAttributionPage searches', () => {
     expect((await screen.findByRole('checkbox') as HTMLInputElement).checked).toBe(true)
   })
 
+  it('does not offer the DSO party as a featured app', async () => {
+    const dso = 'DSO::1220dso'
+    const app = 'kairo-executor::1220app'
+    const response = validResponse('dso-tx', 4)
+    response.events.verdict!.transaction_views!.views[0].confirming_parties = [
+      { parties: [dso, app], threshold: 2 },
+    ]
+    mockedFetch.mockResolvedValue(response)
+
+    render(
+      <Provider>
+        <MemoryRouter initialEntries={['/?updateId=dso-tx&network=devnet']}>
+          <TrafficAttributionPage />
+        </MemoryRouter>
+      </Provider>,
+    )
+
+    expect(await screen.findByText('kairo-executor')).toBeTruthy()
+    expect(screen.queryByText('DSO')).toBeNull()
+    expect(screen.getAllByRole('checkbox')).toHaveLength(1)
+  })
+
   it('discards an older response and keeps searching for the latest request', async () => {
     const first = deferred<LighthouseTransactionResponse>()
     const second = deferred<LighthouseTransactionResponse>()

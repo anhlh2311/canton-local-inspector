@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attributeTraffic, partyHint, uniqueConfirmers } from './cip104'
+import { attributeTraffic, isDsoParty, partyHint, uniqueConfirmers } from './cip104'
 import type { TrafficSummary, TransactionView } from '@/types/lighthouse'
 
 const KAIRO = 'kairo-executor::aaa'
@@ -41,6 +41,15 @@ const tx1Summary: TrafficSummary = {
 describe('partyHint', () => {
   it('returns the prefix before ::', () => {
     expect(partyHint(KAIRO)).toBe('kairo-executor')
+  })
+})
+
+describe('isDsoParty', () => {
+  it('matches the DSO party hint', () => {
+    expect(isDsoParty(DSO)).toBe(true)
+    expect(isDsoParty('DSO')).toBe(true)
+    expect(isDsoParty(KAIRO)).toBe(false)
+    expect(isDsoParty('dso::eee')).toBe(false)
   })
 })
 
@@ -103,5 +112,28 @@ describe('attributeTraffic sole featured app', () => {
     })
     expect(result.weights[0]?.weight).toBe(8572)
     expect(result.weightSum).toBe(8572)
+  })
+
+  it('does not treat the DSO party as a featured app', () => {
+    const views: TransactionView[] = [
+      { view_id: 0, informees: [], sub_views: [], confirming_parties: groups([KAIRO, USER, DSO]) },
+      { view_id: 1, informees: [], sub_views: [], confirming_parties: groups([DSO, USER]) },
+    ]
+    const traffic: TrafficSummary = {
+      total_traffic_cost: 1000,
+      envelope_traffic_summaries: [
+        { view_ids: [0], traffic_cost: 400 },
+        { view_ids: [1], traffic_cost: 600 },
+      ],
+    }
+    const result = attributeTraffic({
+      traffic,
+      views,
+      featuredPartyIds: [DSO],
+      activityWeight: 1,
+    })
+    expect(result.appEnvelopeTraffic).toBe(0)
+    expect(result.leftover).toBe(1000)
+    expect(result.weights).toEqual([])
   })
 })

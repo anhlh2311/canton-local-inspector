@@ -41,6 +41,11 @@ export function partyHint(partyId: string): string {
   return i === -1 ? partyId : partyId.slice(0, i)
 }
 
+/** Decentralized Synchronizer Operator — not a featured app. */
+export function isDsoParty(partyId: string): boolean {
+  return partyHint(partyId) === 'DSO'
+}
+
 function viewConfirmers(view: TransactionView): string[] {
   const groups: ConfirmingPartyGroup[] = view.confirming_parties ?? []
   const out = new Set<string>()
@@ -72,7 +77,7 @@ function envelopeConfirmers(
 }
 
 export function attributeTraffic(input: AttributeTrafficInput): AttributionResult {
-  const featured = new Set(input.featuredPartyIds)
+  const featured = new Set(input.featuredPartyIds.filter((p) => !isDsoParty(p)))
   const viewsById = new Map(input.views.map((v) => [v.view_id, v]))
   const total = input.traffic.total_traffic_cost
   const weightByParty = new Map<string, number>()

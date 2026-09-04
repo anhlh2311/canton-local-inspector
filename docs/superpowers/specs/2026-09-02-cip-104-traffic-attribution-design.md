@@ -16,7 +16,7 @@ This page does not use the selected participant node. Network here is only the L
 | Fetch | Existing `/api/proxy`. Host is chosen by a DevNet / MainNet control on the page. No new serverless route. |
 | Lighthouse hosts | DevNet `https://lighthouse.devnet.cantonloop.com/api/`. MainNet `https://lighthouse.xyz/api/`. Same path: `transactions/{updateId}`. |
 | Lighthouse auth | None on either host. No API key. Do not send `x-lighthouse-client`. |
-| Featured apps (v1) | User ticks from this transaction’s unique confirming parties. Nothing is featured until ticked. |
+| Featured apps (v1) | User ticks from this transaction’s unique confirming parties, excluding the DSO (Decentralized Synchronizer Operator) party. Nothing is featured until ticked. |
 | Featured apps (later) | Same tick list, filled by `resolveFeaturedApps(..., 'featuredAppRight')`. |
 | Carry ticks | Optional switch. On: next search checks `remembered ∩ thisTxConfirmers`. Off: empty set. |
 | Persistence | Network, carry-ticks switch, and remembered party ids in `localStorage` via Jotai `atomWithStorage` (same pattern as [nodeStore.ts](mdc:src/stores/nodeStore.ts)). |
