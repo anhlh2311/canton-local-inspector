@@ -150,6 +150,8 @@ describe('TrafficAttributionPage searches', () => {
     )
 
     expect(await screen.findByText('kairo-executor')).toBeTruthy()
+    expect(screen.getByText('kairo-executor::1220app')).toBeTruthy()
+    expect(screen.getByTitle('Copy to clipboard')).toBeTruthy()
     expect(screen.queryByText('DSO')).toBeNull()
     expect(screen.getAllByRole('checkbox')).toHaveLength(1)
   })

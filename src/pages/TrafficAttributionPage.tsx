@@ -21,7 +21,6 @@ import {
   rememberedFeaturedPartyIdsAtom,
 } from '@/stores/cip104Store'
 import type { LighthouseTransactionResponse } from '@/types/lighthouse'
-import { truncateId } from '@/lib/utils'
 
 function isLighthouseNetwork(v: string | null): v is LighthouseNetwork {
   return v === 'devnet' || v === 'mainnet'
@@ -235,19 +234,26 @@ export function TrafficAttributionPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              {featuredCandidates.map((partyId) => (
-                <label key={partyId} className="flex items-start gap-2 text-sm">
+              {featuredCandidates.map((partyId, index) => (
+                <div key={partyId} className="flex items-start gap-2 text-sm">
                   <input
+                    id={`featured-app-${index}`}
                     type="checkbox"
                     className="mt-1"
                     checked={checked.includes(partyId)}
                     onChange={(e) => onToggleParty(partyId, e.target.checked)}
                   />
-                  <span>
-                    <span className="font-medium">{partyHint(partyId)}</span>
-                    <span className="block font-mono text-[10px] text-muted-foreground">{truncateId(partyId, 12)}</span>
-                  </span>
-                </label>
+                  <div className="min-w-0 flex-1">
+                    <label htmlFor={`featured-app-${index}`} className="font-medium cursor-pointer">
+                      {partyHint(partyId)}
+                    </label>
+                    <IdDisplay
+                      id={partyId}
+                      truncate={0}
+                      className="text-[10px] text-muted-foreground"
+                    />
+                  </div>
+                </div>
               ))}
             </CardContent>
           </Card>

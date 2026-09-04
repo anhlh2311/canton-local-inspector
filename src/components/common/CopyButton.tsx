@@ -12,10 +12,15 @@ export function CopyButton({ text, className }: CopyButtonProps) {
 
   return (
     <Button
+      type="button"
       variant="ghost"
       size="icon"
       className={className}
-      onClick={() => copy(text)}
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        void copy(text)
+      }}
       title="Copy to clipboard"
     >
       {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
