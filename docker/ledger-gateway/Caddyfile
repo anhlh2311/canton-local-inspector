@@ -11,6 +11,10 @@
 			reverse_proxy {$LEDGER_UPSTREAM} {
 				header_up Host {upstream_host}
 				header_up -X-Ledger-Gateway-Secret
+				transport http {
+					tls
+					tls_server_name {upstream_host}
+				}
 			}
 		}
 
@@ -19,6 +23,10 @@
 			reverse_proxy {$VALIDATOR_UPSTREAM} {
 				header_up Host {upstream_host}
 				header_up -X-Ledger-Gateway-Secret
+				transport http {
+					tls
+					tls_server_name {upstream_host}
+				}
 			}
 		}
 
@@ -32,12 +40,20 @@
 				reverse_proxy {$AUTH_UPSTREAM} {
 					header_up Host {upstream_host}
 					header_up -X-Ledger-Gateway-Secret
+					transport http {
+						tls
+						tls_server_name {upstream_host}
+					}
 				}
 			}
 			respond "Not Found" 404
 		}
 
 		respond "Not Found" 404
+	}
+
+	handle_errors {
+		respond "upstream {http.error.status_code}: {http.error.message}" {http.error.status_code}
 	}
 
 	respond "Unauthorized" 401

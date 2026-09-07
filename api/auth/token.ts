@@ -111,8 +111,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
-      return res.status(response.status).json({ error: 'Token exchange failed', details: errorText })
+      const errorText = (await response.text()).trim()
+      let tokenHost = ''
+      try {
+        tokenHost = new URL(auth.tokenUrl).host
+      } catch {
+        /* ignore */
+      }
+      return res.status(response.status).json({
+        error: 'Token exchange failed',
+        details: errorText || `${response.status} ${response.statusText}`.trim(),
+        tokenHost,
+        upstreamStatus: response.status,
+      })
     }
 
     const data = await response.json()

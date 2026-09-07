@@ -73,6 +73,24 @@ HTTP queries (Overview, Parties, Contracts without Load All) work from local and
 
 Load All works only if the user's browser can reach the gateway **and** you allow WebSocket without the secret (not enabled here) or the user is on the VPN. Prefer HTTP queries, or run Load All from a machine that can reach the ledger directly.
 
+## 502 from `/api/auth/token`
+
+`{"error":"Token exchange failed"}` with an empty body means Vercel reached the gateway and Caddy accepted the secret, then **Caddy could not complete the hop to Keycloak**. A missing secret is `401 Unauthorized`, not 502.
+
+On the jump host:
+
+```bash
+docker logs ledger-gateway-ledger-gateway-1 --tail 80
+docker exec ledger-gateway-ledger-gateway-1 wget -S -O- \
+  --header='Host: keycloak.catalyst.angelhack.com' \
+  --post-data='grant_type=client_credentials&client_id=x&client_secret=y' \
+  https://keycloak.catalyst.angelhack.com/auth/realms/catalyst-canton/protocol/openid-connect/token
+```
+
+- wget fails inside Caddy, but `curl` to Keycloak **on the host** works → attach the VPN network: `docker network connect wireguard_default ledger-gateway-ledger-gateway-1`
+- wget returns `403 Forbidden` → the jump host (or Docker SNAT IP) is not on Keycloak’s allowlist
+- wget returns Keycloak JSON (`invalid_client`, etc.) → routing is fine; fix client id/secret/audience in Redis
+
 ## Do not
 
 - Expose Caddy without TLS in front (NPM on 443)
