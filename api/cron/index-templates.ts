@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { Redis } from '@upstash/redis'
 import { SignJWT } from 'jose'
 import WebSocket from 'ws'
+import { ledgerGatewayHeaders } from '../../lib/ledgerGateway'
 
 /**
  * Cron job: Index templates for all configured Canton nodes.
@@ -151,7 +152,10 @@ async function getJsonApiToken(node: NodeConfig, redis: Redis): Promise<string> 
 
   const res = await fetch(creds.tokenUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      ...ledgerGatewayHeaders(creds.tokenUrl),
+    },
     body: new URLSearchParams({
       grant_type: 'client_credentials',
       client_id: creds.clientId,
@@ -175,7 +179,10 @@ async function getValidatorToken(node: NodeConfig, redis: Redis): Promise<string
   const audience = creds.validatorAudience || node.validatorAudience || creds.audience
   const res = await fetch(creds.tokenUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      ...ledgerGatewayHeaders(creds.tokenUrl),
+    },
     body: new URLSearchParams({
       grant_type: 'client_credentials',
       client_id: creds.clientId,

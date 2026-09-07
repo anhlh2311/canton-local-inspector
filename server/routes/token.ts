@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { ledgerGatewayHeaders } from '../../lib/ledgerGateway'
 
 const router = Router()
 
@@ -46,7 +47,10 @@ router.post('/', async (req, res) => {
   try {
     const response = await fetch(auth.tokenUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        ...ledgerGatewayHeaders(auth.tokenUrl),
+      },
       body: new URLSearchParams({
         grant_type: 'client_credentials',
         client_id: auth.clientId,

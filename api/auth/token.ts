@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { jwtVerify } from 'jose'
 import { Redis } from '@upstash/redis'
+import { ledgerGatewayHeaders } from '../../lib/ledgerGateway'
 
 /**
  * OAuth2 token exchange serverless function.
@@ -97,7 +98,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const response = await fetch(auth.tokenUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        ...ledgerGatewayHeaders(auth.tokenUrl),
+      },
       body: new URLSearchParams({
         grant_type: 'client_credentials',
         client_id: auth.clientId,

@@ -917,8 +917,8 @@ async function fetchOAuth2TokenDirect(
       const data = await res.json()
       return data.access_token
     }
-    // If we get a non-CORS error (e.g., 401), throw it
-    if (res.status !== 0) {
+    // Jump-host gateway returns 401 without the secret; inspector proxy can attach it.
+    if (res.status !== 0 && res.status !== 401) {
       throw new Error(`OAuth2 token exchange failed: ${res.status}`)
     }
   } catch (err) {

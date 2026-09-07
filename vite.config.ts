@@ -129,7 +129,14 @@ function dynamicProxyPlugin(): Plugin {
 
             const tokenRes = await fetch(creds.tokenUrl, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                ...ledgerGatewayHeaders(
+                  creds.tokenUrl,
+                  readEnvVar('LEDGER_GATEWAY_SECRET') ?? process.env.LEDGER_GATEWAY_SECRET,
+                  readEnvVar('LEDGER_GATEWAY_HOSTS') ?? process.env.LEDGER_GATEWAY_HOSTS,
+                ),
+              },
               body: new URLSearchParams({
                 grant_type: 'client_credentials',
                 client_id: creds.clientId,

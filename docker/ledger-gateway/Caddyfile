@@ -6,10 +6,38 @@
 	@authed header X-Ledger-Gateway-Secret {$LEDGER_GATEWAY_SECRET}
 
 	handle @authed {
-		reverse_proxy {$LEDGER_UPSTREAM} {
-			header_up Host {upstream_hostport}
-			header_up -X-Ledger-Gateway-Secret
+		@ledger host {$LEDGER_GATEWAY_HOSTNAME}
+		handle @ledger {
+			reverse_proxy {$LEDGER_UPSTREAM} {
+				header_up Host {upstream_host}
+				header_up -X-Ledger-Gateway-Secret
+			}
 		}
+
+		@validator host {$VALIDATOR_GATEWAY_HOSTNAME}
+		handle @validator {
+			reverse_proxy {$VALIDATOR_UPSTREAM} {
+				header_up Host {upstream_host}
+				header_up -X-Ledger-Gateway-Secret
+			}
+		}
+
+		@auth host {$AUTH_GATEWAY_HOSTNAME}
+		handle @auth {
+			@token {
+				method POST
+				path_regexp token ^/auth/realms/[^/]+/protocol/openid-connect/token$
+			}
+			handle @token {
+				reverse_proxy {$AUTH_UPSTREAM} {
+					header_up Host {upstream_host}
+					header_up -X-Ledger-Gateway-Secret
+				}
+			}
+			respond "Not Found" 404
+		}
+
+		respond "Not Found" 404
 	}
 
 	respond "Unauthorized" 401

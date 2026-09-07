@@ -3,6 +3,7 @@ import { SignJWT } from 'jose'
 import WebSocket from 'ws'
 import { getStorage } from '../storage/index.js'
 import type { TemplateEntry, NodeAuthConfig } from '../storage/interface.js'
+import { ledgerGatewayHeaders } from '../../lib/ledgerGateway'
 
 const router = Router()
 
@@ -105,7 +106,10 @@ async function getJsonApiToken(node: NodeConfig): Promise<string> {
 
   const res = await fetch(creds.tokenUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      ...ledgerGatewayHeaders(creds.tokenUrl),
+    },
     body: new URLSearchParams({
       grant_type: 'client_credentials',
       client_id: creds.clientId,

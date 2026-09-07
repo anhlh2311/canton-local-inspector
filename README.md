@@ -258,7 +258,7 @@ The dev server proxies all Canton API requests to avoid CORS:
 
 The remote and OAuth2 proxies use a custom Vite plugin (`dynamicProxyPlugin`) that decodes the target origin from the URL path and forwards requests using Node.js native `http`/`https` modules.
 
-When MainNet JSON API is VPN-restricted, run [docker/ledger-gateway](docker/ledger-gateway/README.md) on an allowlisted host and set `LEDGER_GATEWAY_HOSTS` + `LEDGER_GATEWAY_SECRET` on local and Vercel. HTTP calls go browser → inspector proxy → gateway. Load All WebSockets still go from the browser to `jsonApiUrl` and cannot carry that secret.
+When MainNet ledger, validator, or Keycloak token URLs are VPN-restricted, run [docker/ledger-gateway](docker/ledger-gateway/README.md) on an allowlisted host. Set `LEDGER_GATEWAY_HOSTS` (all three public hostnames) + `LEDGER_GATEWAY_SECRET` on local and Vercel, and point `jsonApiUrl`, `validatorApiUrl`, and `CANTON_NODES_AUTH.tokenUrl` at those hostnames. HTTP calls go browser → inspector → gateway. Load All WebSockets still go from the browser to `jsonApiUrl` and cannot carry that secret.
 
 ## Project Structure
 
@@ -352,7 +352,7 @@ CANTON_NODES_AUTH='{"devnet":{"tokenUrl":"https://your-tenant.auth0.com/oauth/to
 CANTON_ALLOWED_TARGETS=http://1.2.3.4:7575/api/json-api,http://1.2.3.4:5003
 
 # MainNet jump-host gateway (optional). See docker/ledger-gateway/README.md
-# LEDGER_GATEWAY_HOSTS=ledger-gw.example.com
+# LEDGER_GATEWAY_HOSTS=inspector-ledger.madeintoilet.com,inspector-validator.madeintoilet.com,inspector-auth.madeintoilet.com
 # LEDGER_GATEWAY_SECRET=<same secret as the gateway>
 
 # Upstash Redis (auto-set when linking via Vercel Marketplace)

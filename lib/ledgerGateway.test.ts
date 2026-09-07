@@ -13,4 +13,16 @@ describe('ledgerGatewayHeaders', () => {
     })
     expect(ledgerGatewayHeaders('https://ledger.internal', 's3cret', 'gw.example')).toEqual({})
   })
+
+  it('matches a token URL path against a gateway hostname', () => {
+    const tokenUrl =
+      'https://inspector-auth.madeintoilet.com/auth/realms/catalyst-canton/protocol/openid-connect/token'
+    expect(
+      ledgerGatewayHeaders(
+        tokenUrl,
+        's3cret',
+        'inspector-ledger.madeintoilet.com,inspector-validator.madeintoilet.com,inspector-auth.madeintoilet.com',
+      ),
+    ).toEqual({ [LEDGER_GATEWAY_SECRET_HEADER]: 's3cret' })
+  })
 })
