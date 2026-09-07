@@ -90,6 +90,7 @@ docker exec ledger-gateway-ledger-gateway-1 wget -S -O- \
 - wget fails inside Caddy, but `curl` to Keycloak **on the host** works → attach the VPN network: `docker network connect wireguard_default ledger-gateway-ledger-gateway-1`
 - wget returns `403 Forbidden` → the jump host (or Docker SNAT IP) is not on Keycloak’s allowlist
 - wget returns Keycloak JSON (`invalid_client`, etc.) → routing is fine; fix client id/secret/audience in Redis
+- `tls: either ServerName or InsecureSkipVerify must be specified` → Caddyfile used `tls_server_name {upstream_host}` (empty at TLS config time). Use `https://` on `*_UPSTREAM` only; do not add a `transport http { tls }` block.
 
 ## Do not
 
