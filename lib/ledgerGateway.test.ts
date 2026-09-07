@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LEDGER_GATEWAY_SECRET_HEADER, ledgerGatewayHeaders } from './ledgerGateway'
+import { LEDGER_GATEWAY_SECRET_HEADER, ledgerGatewayHeaders } from './ledgerGateway.js'
 
 describe('ledgerGatewayHeaders', () => {
   it('is empty when secret or hosts are missing', () => {

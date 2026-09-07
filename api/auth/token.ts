@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { jwtVerify } from 'jose'
 import { Redis } from '@upstash/redis'
-import { ledgerGatewayHeaders } from '../../lib/ledgerGateway'
+import { ledgerGatewayHeaders } from '../../lib/ledgerGateway.js'
 
 /**
  * OAuth2 token exchange serverless function.

@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express'
 import http from 'node:http'
 import https from 'node:https'
-import { ledgerGatewayHeaders } from '../../lib/ledgerGateway'
+import { ledgerGatewayHeaders } from '../../lib/ledgerGateway.js'
 
 /**
  * Local proxy for Vite-style proxy paths used when VITE_DEPLOY_ENV=local.

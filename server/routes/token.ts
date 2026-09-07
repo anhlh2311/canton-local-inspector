@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { ledgerGatewayHeaders } from '../../lib/ledgerGateway'
+import { ledgerGatewayHeaders } from '../../lib/ledgerGateway.js'
 
 const router = Router()
 

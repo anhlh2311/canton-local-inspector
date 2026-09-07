@@ -6,7 +6,7 @@ import path from 'path'
 import fs from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
-import { LEDGER_GATEWAY_SECRET_HEADER, ledgerGatewayHeaders } from './lib/ledgerGateway'
+import { LEDGER_GATEWAY_SECRET_HEADER, ledgerGatewayHeaders } from './lib/ledgerGateway.js'
 
 /** Read a specific non-VITE_ env var from .env.local / .env (server-side only, never bundled). */
 function readEnvVar(name: string): string | undefined {

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { jwtVerify } from 'jose'
-import { ledgerGatewayHeaders } from '../lib/ledgerGateway'
+import { ledgerGatewayHeaders } from '../lib/ledgerGateway.js'
 
 /**
  * Canton API proxy serverless function.

@@ -3,6 +3,17 @@
   "buildCommand": "yarn build",
   "outputDirectory": "dist",
   "framework": null,
+  "functions": {
+    "api/auth/token.ts": {
+      "includeFiles": "lib/**"
+    },
+    "api/proxy.ts": {
+      "includeFiles": "lib/**"
+    },
+    "api/cron/index-templates.ts": {
+      "includeFiles": "lib/**"
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/index-templates",

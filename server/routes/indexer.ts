@@ -3,7 +3,7 @@ import { SignJWT } from 'jose'
 import WebSocket from 'ws'
 import { getStorage } from '../storage/index.js'
 import type { TemplateEntry, NodeAuthConfig } from '../storage/interface.js'
-import { ledgerGatewayHeaders } from '../../lib/ledgerGateway'
+import { ledgerGatewayHeaders } from '../../lib/ledgerGateway.js'
 
 const router = Router()
 

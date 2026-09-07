@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { Redis } from '@upstash/redis'
 import { SignJWT } from 'jose'
 import WebSocket from 'ws'
-import { ledgerGatewayHeaders } from '../../lib/ledgerGateway'
+import { ledgerGatewayHeaders } from '../../lib/ledgerGateway.js'
 
 /**
  * Cron job: Index templates for all configured Canton nodes.
