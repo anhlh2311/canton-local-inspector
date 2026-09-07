@@ -16,7 +16,7 @@ describe('ledgerGatewayHeaders', () => {
 
   it('matches a token URL path against a gateway hostname', () => {
     const tokenUrl =
-      'https://inspector-auth.madeintoilet.com/auth/realms/catalyst-canton/protocol/openid-connect/token'
+      'https://inspector-auth.madeintoilet.com/kairo/auth/realms/catalyst-canton/protocol/openid-connect/token'
     expect(
       ledgerGatewayHeaders(
         tokenUrl,

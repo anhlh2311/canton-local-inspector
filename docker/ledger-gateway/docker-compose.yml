@@ -2,6 +2,8 @@ services:
   ledger-gateway:
     image: caddy:2-alpine
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "${LEDGER_GATEWAY_PUBLISH_PORT:-8080}:${LEDGER_GATEWAY_PORT:-8080}"
     environment:
@@ -17,6 +19,7 @@ services:
       AUTH_UPSTREAM: ${AUTH_UPSTREAM:?Set AUTH_UPSTREAM}
       AUTH_UPSTREAM_HOST: ${AUTH_UPSTREAM_HOST:?Set AUTH_UPSTREAM_HOST}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./generate-caddyfile.sh:/generate-caddyfile.sh:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    entrypoint: ["/bin/sh", "/generate-caddyfile.sh"]

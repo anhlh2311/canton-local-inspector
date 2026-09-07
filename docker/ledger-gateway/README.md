@@ -5,9 +5,9 @@ HTTPS reverse proxy for VPN-only Canton JSON Ledger API, validator API, and the 
 ```
 Browser
   → inspector (Vite / Express / Vercel)
-    → https://inspector-ledger.madeintoilet.com      → LEDGER_UPSTREAM
-    → https://inspector-validator.madeintoilet.com   → VALIDATOR_UPSTREAM
-    → https://inspector-auth.madeintoilet.com        → AUTH_UPSTREAM (token path only)
+    → https://inspector-ledger.madeintoilet.com[/kairo]      → LEDGER_UPSTREAM or KAIRO_LEDGER_UPSTREAM
+    → https://inspector-validator.madeintoilet.com[/kairo]   → VALIDATOR_UPSTREAM or KAIRO_VALIDATOR_UPSTREAM
+    → https://inspector-auth.madeintoilet.com[/kairo]/auth/… → AUTH_UPSTREAM or KAIRO_AUTH_UPSTREAM
 ```
 
 Nginx Proxy Manager terminates TLS and forwards all three hosts to this Caddy container. Caddy requires `X-Ledger-Gateway-Secret`, then routes on `Host`. The inspector attaches that header only for hosts listed in `LEDGER_GATEWAY_HOSTS`. The browser never sees the secret.
@@ -64,6 +64,36 @@ CANTON_NODES_AUTH='{"mainnet":{"tokenUrl":"https://inspector-auth.madeintoilet.c
 ```
 
 Audiences stay the real Canton/Keycloak values. Use server-side `CANTON_NODES_AUTH` (not browser-owned client secrets).
+
+## Extra nodes on path prefixes
+
+The same three public hostnames can front many VPN ledgers. Caddy strips the first path segment and proxies to that tenant. Unprefixed URLs still use `LEDGER_UPSTREAM` / `VALIDATOR_UPSTREAM` / `AUTH_UPSTREAM` (the current Angelhack node).
+
+```bash
+GATEWAY_TENANTS=kairo,sanctum,mcph
+KAIRO_LEDGER_UPSTREAM=https://kairo-participant.example
+KAIRO_LEDGER_UPSTREAM_HOST=kairo-participant.example
+KAIRO_VALIDATOR_UPSTREAM=https://kairo-validator.example
+KAIRO_VALIDATOR_UPSTREAM_HOST=kairo-validator.example
+KAIRO_AUTH_UPSTREAM=https://kairo-keycloak.example
+KAIRO_AUTH_UPSTREAM_HOST=kairo-keycloak.example
+# SANCTUM_* and MCPH_* the same six variables
+```
+
+Inspector node (path is preserved on the proxy):
+
+```json
+{
+  "jsonApiUrl": "https://inspector-ledger.madeintoilet.com/kairo",
+  "validatorApiUrl": "https://inspector-validator.madeintoilet.com/kairo"
+}
+```
+
+```bash
+tokenUrl=https://inspector-auth.madeintoilet.com/kairo/auth/realms/catalyst-canton/protocol/openid-connect/token
+```
+
+`LEDGER_GATEWAY_HOSTS` stays the three hostnames. Do not add a fourth NPM site.
 
 ## Load All (WebSocket)
 
