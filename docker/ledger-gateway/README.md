@@ -95,6 +95,8 @@ tokenUrl=https://inspector-auth.madeintoilet.com/kairo/auth/realms/catalyst-cant
 
 `LEDGER_GATEWAY_HOSTS` stays the three hostnames. Do not add a fourth NPM site.
 
+`*_UPSTREAM` may include a path such as `/api/json-api`. Caddy `reverse_proxy` cannot take a path; the generator uses scheme/host/port and rewrites that path onto the request. Set inspector `jsonApiUrl` to `https://inspector-ledger.madeintoilet.com/mcph` (tenant only), not `.../mcph/api/json-api`.
+
 If NPM returns HTML `502 Bad Gateway` (OpenResty page), Caddy is not listening — usually the generator exited. `docker compose logs ledger-gateway`. Incomplete tenants are skipped; the unprefixed Angelhack routes should still start.
 
 ## Load All (WebSocket)

@@ -3,6 +3,8 @@
 # Unprefixed routes use LEDGER_*/VALIDATOR_*/AUTH_*.
 # Path prefixes: GATEWAY_TENANTS=kairo,sanctum,mcph
 # Incomplete tenants are skipped so the default Angelhack routes still start.
+# *_UPSTREAM may include a path (e.g. /api/json-api); Caddy reverse_proxy only
+# gets scheme/host/port and the path is rewritten onto the request.
 set -eu
 
 env_val() {
@@ -12,6 +14,42 @@ env_val() {
 normalize_tenant() {
 	printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'
 }
+
+split_upstream() {
+	u=${1%/}
+	case $u in
+		*://*)
+			scheme=${u%%://*}
+			rest=${u#*://}
+			hostport=${rest%%/*}
+			_origin="${scheme}://${hostport}"
+			if [ "$rest" = "$hostport" ]; then
+				_prefix=""
+			else
+				_prefix=${rest#"$hostport"}
+			fi
+			;;
+		*)
+			echo "invalid upstream URL: $1" >&2
+			exit 1
+			;;
+	esac
+}
+
+emit_proxy() {
+	indent=$1
+	split_upstream "$2"
+	host=$3
+	if [ -n "${_prefix}" ] && [ "${_prefix}" != "/" ]; then
+		append "${indent}rewrite * ${_prefix}{uri}"
+	fi
+	append "${indent}reverse_proxy ${_origin} {"
+	append "${indent}	header_up Host ${host}"
+	append "${indent}	header_up -X-Ledger-Gateway-Secret"
+	append "${indent}}"
+}
+
+TOKEN_PATH_REGEXP='^/(auth/realms/[^/]+/protocol/openid-connect/token|oauth/token)$'
 
 tenant_complete() {
 	name=$1
@@ -70,18 +108,12 @@ for name in $COMPLETE; do
 	append "			@${name}_ledger path /${name} /${name}/*"
 	append "			handle @${name}_ledger {"
 	append "				uri strip_prefix /${name}"
-	append "				reverse_proxy ${up} {"
-	append "					header_up Host ${host}"
-	append '					header_up -X-Ledger-Gateway-Secret'
-	append '				}'
+	emit_proxy '				' "$up" "$host"
 	append '			}'
 	append ''
 done
 
-append "			reverse_proxy ${LEDGER_UPSTREAM} {"
-append "				header_up Host ${LEDGER_UPSTREAM_HOST}"
-append '				header_up -X-Ledger-Gateway-Secret'
-append '			}'
+emit_proxy '			' "${LEDGER_UPSTREAM}" "${LEDGER_UPSTREAM_HOST}"
 append '		}'
 append ''
 append "		@validator host ${VALIDATOR_GATEWAY_HOSTNAME}"
@@ -94,18 +126,12 @@ for name in $COMPLETE; do
 	append "			@${name}_validator path /${name} /${name}/*"
 	append "			handle @${name}_validator {"
 	append "				uri strip_prefix /${name}"
-	append "				reverse_proxy ${up} {"
-	append "					header_up Host ${host}"
-	append '					header_up -X-Ledger-Gateway-Secret'
-	append '				}'
+	emit_proxy '				' "$up" "$host"
 	append '			}'
 	append ''
 done
 
-append "			reverse_proxy ${VALIDATOR_UPSTREAM} {"
-append "				header_up Host ${VALIDATOR_UPSTREAM_HOST}"
-append '				header_up -X-Ledger-Gateway-Secret'
-append '			}'
+emit_proxy '			' "${VALIDATOR_UPSTREAM}" "${VALIDATOR_UPSTREAM_HOST}"
 append '		}'
 append ''
 append "		@auth host ${AUTH_GATEWAY_HOSTNAME}"
@@ -120,13 +146,10 @@ for name in $COMPLETE; do
 	append "				uri strip_prefix /${name}"
 	append "				@${name}_token {"
 	append '					method POST'
-	append "					path_regexp ${name}_token ^/auth/realms/[^/]+/protocol/openid-connect/token$"
+	append "					path_regexp ${name}_token ${TOKEN_PATH_REGEXP}"
 	append '				}'
 	append "				handle @${name}_token {"
-	append "					reverse_proxy ${up} {"
-	append "						header_up Host ${host}"
-	append '						header_up -X-Ledger-Gateway-Secret'
-	append '					}'
+	emit_proxy '					' "$up" "$host"
 	append '				}'
 	append '				respond "Not Found" 404'
 	append '			}'
@@ -135,13 +158,10 @@ done
 
 append '			@token {'
 append '				method POST'
-append '				path_regexp token ^/auth/realms/[^/]+/protocol/openid-connect/token$'
+append "				path_regexp token ${TOKEN_PATH_REGEXP}"
 append '			}'
 append '			handle @token {'
-append "				reverse_proxy ${AUTH_UPSTREAM} {"
-append "					header_up Host ${AUTH_UPSTREAM_HOST}"
-append '					header_up -X-Ledger-Gateway-Secret'
-append '				}'
+emit_proxy '				' "${AUTH_UPSTREAM}" "${AUTH_UPSTREAM_HOST}"
 append '			}'
 append '			respond "Not Found" 404'
 append '		}'
