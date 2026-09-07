@@ -6,26 +6,28 @@ import path from 'path'
 import fs from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
+import { LEDGER_GATEWAY_SECRET_HEADER, ledgerGatewayHeaders } from './lib/ledgerGateway'
 
-/** Read a specific non-VITE_ env var from .env file (server-side only, never bundled). */
+/** Read a specific non-VITE_ env var from .env.local / .env (server-side only, never bundled). */
 function readEnvVar(name: string): string | undefined {
-  try {
-    const envFile = fs.readFileSync(path.resolve(process.cwd(), '.env'), 'utf-8')
-    for (const line of envFile.split('\n')) {
-      const trimmed = line.trim()
-      if (trimmed.startsWith('#') || !trimmed.includes('=')) continue
-      const eqIdx = trimmed.indexOf('=')
-      const key = trimmed.slice(0, eqIdx).trim()
-      if (key === name) {
-        let val = trimmed.slice(eqIdx + 1).trim()
-        // Strip surrounding quotes
-        if ((val.startsWith("'") && val.endsWith("'")) || (val.startsWith('"') && val.endsWith('"'))) {
-          val = val.slice(1, -1)
+  for (const file of ['.env.local', '.env']) {
+    try {
+      const envFile = fs.readFileSync(path.resolve(process.cwd(), file), 'utf-8')
+      for (const line of envFile.split('\n')) {
+        const trimmed = line.trim()
+        if (trimmed.startsWith('#') || !trimmed.includes('=')) continue
+        const eqIdx = trimmed.indexOf('=')
+        const key = trimmed.slice(0, eqIdx).trim()
+        if (key === name) {
+          let val = trimmed.slice(eqIdx + 1).trim()
+          if ((val.startsWith("'") && val.endsWith("'")) || (val.startsWith('"') && val.endsWith('"'))) {
+            val = val.slice(1, -1)
+          }
+          return val
         }
-        return val
       }
-    }
-  } catch { /* .env not found */ }
+    } catch { /* file not found */ }
+  }
   return undefined
 }
 
@@ -178,6 +180,9 @@ function dynamicProxyPlugin(): Plugin {
         req.on('data', (chunk: Buffer) => chunks.push(chunk))
         req.on('end', () => {
           const body = Buffer.concat(chunks)
+          const incoming = { ...req.headers }
+          delete incoming[LEDGER_GATEWAY_SECRET_HEADER]
+          delete incoming['X-Ledger-Gateway-Secret']
 
           const proxyReq = transport.request(
             {
@@ -186,8 +191,13 @@ function dynamicProxyPlugin(): Plugin {
               path: targetUrl.pathname + targetUrl.search,
               method: req.method,
               headers: {
-                ...req.headers,
+                ...incoming,
                 host: targetUrl.host,
+                ...ledgerGatewayHeaders(
+                  targetOrigin,
+                  readEnvVar('LEDGER_GATEWAY_SECRET') ?? process.env.LEDGER_GATEWAY_SECRET,
+                  readEnvVar('LEDGER_GATEWAY_HOSTS') ?? process.env.LEDGER_GATEWAY_HOSTS,
+                ),
               },
             },
             (proxyRes) => {

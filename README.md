@@ -258,6 +258,8 @@ The dev server proxies all Canton API requests to avoid CORS:
 
 The remote and OAuth2 proxies use a custom Vite plugin (`dynamicProxyPlugin`) that decodes the target origin from the URL path and forwards requests using Node.js native `http`/`https` modules.
 
+When MainNet JSON API is VPN-restricted, run [docker/ledger-gateway](docker/ledger-gateway/README.md) on an allowlisted host and set `LEDGER_GATEWAY_HOSTS` + `LEDGER_GATEWAY_SECRET` on local and Vercel. HTTP calls go browser → inspector proxy → gateway. Load All WebSockets still go from the browser to `jsonApiUrl` and cannot carry that secret.
+
 ## Project Structure
 
 ```text
@@ -348,6 +350,10 @@ CANTON_NODES_AUTH='{"devnet":{"tokenUrl":"https://your-tenant.auth0.com/oauth/to
 
 # Proxy allowed targets
 CANTON_ALLOWED_TARGETS=http://1.2.3.4:7575/api/json-api,http://1.2.3.4:5003
+
+# MainNet jump-host gateway (optional). See docker/ledger-gateway/README.md
+# LEDGER_GATEWAY_HOSTS=ledger-gw.example.com
+# LEDGER_GATEWAY_SECRET=<same secret as the gateway>
 
 # Upstash Redis (auto-set when linking via Vercel Marketplace)
 KV_REST_API_URL=<your-url>

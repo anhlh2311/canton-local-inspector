@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { jwtVerify } from 'jose'
+import { ledgerGatewayHeaders } from '../lib/ledgerGateway'
 
 /**
  * Canton API proxy serverless function.
@@ -118,7 +119,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(403).json({ error: `Target URL not allowed: ${targetOrigin}` })
   }
 
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = {
+    ...ledgerGatewayHeaders(targetOrigin),
+  }
   if (req.headers.authorization) headers['Authorization'] = req.headers.authorization as string
   if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type'] as string
 

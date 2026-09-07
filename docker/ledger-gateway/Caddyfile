@@ -1,0 +1,16 @@
+{
+	admin off
+}
+
+:{$LEDGER_GATEWAY_PORT:8080} {
+	@authed header X-Ledger-Gateway-Secret {$LEDGER_GATEWAY_SECRET}
+
+	handle @authed {
+		reverse_proxy {$LEDGER_UPSTREAM} {
+			header_up Host {upstream_hostport}
+			header_up -X-Ledger-Gateway-Secret
+		}
+	}
+
+	respond "Unauthorized" 401
+}

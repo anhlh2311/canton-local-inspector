@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express'
 import http from 'node:http'
 import https from 'node:https'
+import { ledgerGatewayHeaders } from '../../lib/ledgerGateway'
 
 /**
  * Local proxy for Vite-style proxy paths used when VITE_DEPLOY_ENV=local.
@@ -69,7 +70,9 @@ function forwardRequest(req: Request, res: Response, targetUrl: URL): void {
   const isHttps = targetUrl.protocol === 'https:'
   const transport = isHttps ? https : http
 
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = {
+    ...ledgerGatewayHeaders(targetUrl.origin),
+  }
   if (req.headers.authorization) headers['Authorization'] = req.headers.authorization
   if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type']
   headers['Host'] = targetUrl.host
