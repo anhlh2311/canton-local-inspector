@@ -2,27 +2,31 @@
 # Generate a Caddyfile from env and exec Caddy.
 # Unprefixed routes use LEDGER_*/VALIDATOR_*/AUTH_*.
 # Path prefixes: GATEWAY_TENANTS=kairo,sanctum,mcph
-#   KAIRO_LEDGER_UPSTREAM + KAIRO_LEDGER_UPSTREAM_HOST
-#   KAIRO_VALIDATOR_UPSTREAM + KAIRO_VALIDATOR_UPSTREAM_HOST
-#   KAIRO_AUTH_UPSTREAM + KAIRO_AUTH_UPSTREAM_HOST
-# (repeat with SANCTUM_ and MCPH_).
+# Incomplete tenants are skipped so the default Angelhack routes still start.
 set -eu
 
 env_val() {
 	eval "printf '%s' \"\${$1-}\""
 }
 
-require_env() {
-	val=$(env_val "$1")
-	if [ -z "$val" ]; then
-		echo "missing $1 for tenant $2" >&2
-		exit 1
-	fi
-	printf '%s' "$val"
-}
-
 normalize_tenant() {
 	printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'
+}
+
+tenant_complete() {
+	name=$1
+	upper=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
+	for suffix in \
+		LEDGER_UPSTREAM LEDGER_UPSTREAM_HOST \
+		VALIDATOR_UPSTREAM VALIDATOR_UPSTREAM_HOST \
+		AUTH_UPSTREAM AUTH_UPSTREAM_HOST
+	do
+		if [ -z "$(env_val "${upper}_${suffix}")" ]; then
+			echo "skipping tenant ${name}: missing ${upper}_${suffix}" >&2
+			return 1
+		fi
+	done
+	return 0
 }
 
 OUT=/tmp/Caddyfile
@@ -31,6 +35,22 @@ OUT=/tmp/Caddyfile
 append() {
 	printf '%s\n' "$1" >>"$OUT"
 }
+
+COMPLETE=""
+old_ifs=$IFS
+IFS=,
+# shellcheck disable=SC2086
+set -- ${GATEWAY_TENANTS:-}
+IFS=$old_ifs
+for raw in "$@"; do
+	name=$(normalize_tenant "$raw")
+	[ -n "$name" ] || continue
+	if tenant_complete "$name"; then
+		COMPLETE="${COMPLETE} ${name}"
+	fi
+done
+
+echo "gateway tenants:${COMPLETE:- (none)}" >&2
 
 append '{'
 append '	admin off'
@@ -43,18 +63,10 @@ append '	handle @authed {'
 append "		@ledger host ${LEDGER_GATEWAY_HOSTNAME}"
 append '		handle @ledger {'
 
-old_ifs=$IFS
-IFS=,
-# shellcheck disable=SC2086
-set -- ${GATEWAY_TENANTS:-}
-IFS=$old_ifs
-
-for raw in "$@"; do
-	name=$(normalize_tenant "$raw")
-	[ -n "$name" ] || continue
+for name in $COMPLETE; do
 	upper=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
-	up=$(require_env "${upper}_LEDGER_UPSTREAM" "$name")
-	host=$(require_env "${upper}_LEDGER_UPSTREAM_HOST" "$name")
+	up=$(env_val "${upper}_LEDGER_UPSTREAM")
+	host=$(env_val "${upper}_LEDGER_UPSTREAM_HOST")
 	append "			@${name}_ledger path /${name} /${name}/*"
 	append "			handle @${name}_ledger {"
 	append "				uri strip_prefix /${name}"
@@ -75,12 +87,10 @@ append ''
 append "		@validator host ${VALIDATOR_GATEWAY_HOSTNAME}"
 append '		handle @validator {'
 
-for raw in "$@"; do
-	name=$(normalize_tenant "$raw")
-	[ -n "$name" ] || continue
+for name in $COMPLETE; do
 	upper=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
-	up=$(require_env "${upper}_VALIDATOR_UPSTREAM" "$name")
-	host=$(require_env "${upper}_VALIDATOR_UPSTREAM_HOST" "$name")
+	up=$(env_val "${upper}_VALIDATOR_UPSTREAM")
+	host=$(env_val "${upper}_VALIDATOR_UPSTREAM_HOST")
 	append "			@${name}_validator path /${name} /${name}/*"
 	append "			handle @${name}_validator {"
 	append "				uri strip_prefix /${name}"
@@ -101,12 +111,10 @@ append ''
 append "		@auth host ${AUTH_GATEWAY_HOSTNAME}"
 append '		handle @auth {'
 
-for raw in "$@"; do
-	name=$(normalize_tenant "$raw")
-	[ -n "$name" ] || continue
+for name in $COMPLETE; do
 	upper=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
-	up=$(require_env "${upper}_AUTH_UPSTREAM" "$name")
-	host=$(require_env "${upper}_AUTH_UPSTREAM_HOST" "$name")
+	up=$(env_val "${upper}_AUTH_UPSTREAM")
+	host=$(env_val "${upper}_AUTH_UPSTREAM_HOST")
 	append "			@${name}_auth path /${name} /${name}/*"
 	append "			handle @${name}_auth {"
 	append "				uri strip_prefix /${name}"
@@ -148,4 +156,6 @@ append ''
 append '	respond "Unauthorized" 401'
 append '}'
 
+echo "validating generated Caddyfile" >&2
+caddy validate --config "$OUT" --adapter caddyfile >&2
 exec caddy run --config "$OUT" --adapter caddyfile

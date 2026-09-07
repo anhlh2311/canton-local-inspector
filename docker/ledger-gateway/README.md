@@ -95,6 +95,8 @@ tokenUrl=https://inspector-auth.madeintoilet.com/kairo/auth/realms/catalyst-cant
 
 `LEDGER_GATEWAY_HOSTS` stays the three hostnames. Do not add a fourth NPM site.
 
+If NPM returns HTML `502 Bad Gateway` (OpenResty page), Caddy is not listening — usually the generator exited. `docker compose logs ledger-gateway`. Incomplete tenants are skipped; the unprefixed Angelhack routes should still start.
+
 ## Load All (WebSocket)
 
 `streamActiveContractsWs` connects from the **browser** to `jsonApiUrl` as `wss://…`. It does not go through the inspector proxy, so it cannot send the gateway secret.
