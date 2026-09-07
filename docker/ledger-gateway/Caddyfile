@@ -9,7 +9,7 @@
 		@ledger host {$LEDGER_GATEWAY_HOSTNAME}
 		handle @ledger {
 			reverse_proxy {$LEDGER_UPSTREAM} {
-				header_up Host {upstream_host}
+				header_up Host {$LEDGER_UPSTREAM_HOST}
 				header_up -X-Ledger-Gateway-Secret
 			}
 		}
@@ -17,7 +17,7 @@
 		@validator host {$VALIDATOR_GATEWAY_HOSTNAME}
 		handle @validator {
 			reverse_proxy {$VALIDATOR_UPSTREAM} {
-				header_up Host {upstream_host}
+				header_up Host {$VALIDATOR_UPSTREAM_HOST}
 				header_up -X-Ledger-Gateway-Secret
 			}
 		}
@@ -30,7 +30,7 @@
 			}
 			handle @token {
 				reverse_proxy {$AUTH_UPSTREAM} {
-					header_up Host {upstream_host}
+					header_up Host {$AUTH_UPSTREAM_HOST}
 					header_up -X-Ledger-Gateway-Secret
 				}
 			}
