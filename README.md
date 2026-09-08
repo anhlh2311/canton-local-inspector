@@ -258,7 +258,7 @@ The dev server proxies all Canton API requests to avoid CORS:
 
 The remote and OAuth2 proxies use a custom Vite plugin (`dynamicProxyPlugin`) that decodes the target origin from the URL path and forwards requests using Node.js native `http`/`https` modules.
 
-When MainNet ledger, validator, or Keycloak token URLs are VPN-restricted, run [docker/ledger-gateway](docker/ledger-gateway/README.md) on an allowlisted host. Set `LEDGER_GATEWAY_HOSTS` (all three public hostnames) + `LEDGER_GATEWAY_SECRET` on local and Vercel, and point `jsonApiUrl`, `validatorApiUrl`, and `CANTON_NODES_AUTH.tokenUrl` at those hostnames. HTTP calls go browser → inspector → gateway. Load All WebSockets still go from the browser to `jsonApiUrl` and cannot carry that secret.
+When MainNet ledger, validator, or Keycloak token URLs are VPN-restricted, run [docker/ledger-gateway](docker/ledger-gateway/README.md) on an allowlisted host. Set `LEDGER_GATEWAY_HOSTS` (all three public hostnames) + `LEDGER_GATEWAY_SECRET` on local and Vercel, and point `jsonApiUrl`, `validatorApiUrl`, and `CANTON_NODES_AUTH.tokenUrl` at those hostnames. HTTP calls go browser → inspector → gateway. Load All WebSockets go from the browser to `jsonApiUrl`; Caddy accepts ACS upgrades that carry `jwt.token.` without the secret.
 
 ## Project Structure
 

@@ -49,6 +49,26 @@ emit_proxy() {
 	append "${indent}}"
 }
 
+# Ledger tenant + default proxies. suffix keeps Caddy matcher names unique
+# when the same routes are emitted for ACS websocket (no secret) and HTTP (secret).
+emit_ledger_proxies() {
+	indent=$1
+	suffix=$2
+	inner="${indent}	"
+	for name in $COMPLETE; do
+		upper=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
+		up=$(env_val "${upper}_LEDGER_UPSTREAM")
+		host=$(env_val "${upper}_LEDGER_UPSTREAM_HOST")
+		append "${indent}@${name}_ledger${suffix} path /${name} /${name}/*"
+		append "${indent}handle @${name}_ledger${suffix} {"
+		append "${inner}uri strip_prefix /${name}"
+		emit_proxy "$inner" "$up" "$host"
+		append "${indent}"'}'
+		append ''
+	done
+	emit_proxy "$indent" "${LEDGER_UPSTREAM}" "${LEDGER_UPSTREAM_HOST}"
+}
+
 TOKEN_PATH_REGEXP='^/(auth/realms/[^/]+/protocol/openid-connect/token|oauth/token)$'
 
 tenant_complete() {
@@ -95,25 +115,22 @@ append '	admin off'
 append '}'
 append ''
 append ":${LEDGER_GATEWAY_PORT:-8080} {"
+append "	@acs_ws {"
+append "		host ${LEDGER_GATEWAY_HOSTNAME}"
+append '		header Upgrade *websocket*'
+append '		header Sec-WebSocket-Protocol *jwt.token*'
+append '		path_regexp acs_ws ^(/[a-z0-9]+)?/v2/state/active-contracts$'
+append '	}'
+append '	handle @acs_ws {'
+emit_ledger_proxies '		' '_ws'
+append '	}'
+append ''
 append "	@authed header X-Ledger-Gateway-Secret ${LEDGER_GATEWAY_SECRET}"
 append ''
 append '	handle @authed {'
 append "		@ledger host ${LEDGER_GATEWAY_HOSTNAME}"
 append '		handle @ledger {'
-
-for name in $COMPLETE; do
-	upper=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
-	up=$(env_val "${upper}_LEDGER_UPSTREAM")
-	host=$(env_val "${upper}_LEDGER_UPSTREAM_HOST")
-	append "			@${name}_ledger path /${name} /${name}/*"
-	append "			handle @${name}_ledger {"
-	append "				uri strip_prefix /${name}"
-	emit_proxy '				' "$up" "$host"
-	append '			}'
-	append ''
-done
-
-emit_proxy '			' "${LEDGER_UPSTREAM}" "${LEDGER_UPSTREAM_HOST}"
+emit_ledger_proxies '			' ''
 append '		}'
 append ''
 append "		@validator host ${VALIDATOR_GATEWAY_HOSTNAME}"
@@ -175,6 +192,11 @@ append '	}'
 append ''
 append '	respond "Unauthorized" 401'
 append '}'
+
+if [ "${CADDYFILE_GENERATE_ONLY:-}" = 1 ]; then
+	cat "$OUT"
+	exit 0
+fi
 
 echo "validating generated Caddyfile" >&2
 caddy validate --config "$OUT" --adapter caddyfile >&2

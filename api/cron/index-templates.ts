@@ -398,7 +398,9 @@ function streamActiveContracts(
   return new Promise((resolve, reject) => {
     const wsUrl = jsonBase.replace(/^http/, 'ws') + '/v2/state/active-contracts'
     console.log(`[index-templates] [WS] connecting to ${wsUrl}`)
-    const ws = new WebSocket(wsUrl, [`jwt.token.${token}`, 'daml.ws.auth'])
+    const ws = new WebSocket(wsUrl, [`jwt.token.${token}`, 'daml.ws.auth'], {
+      headers: ledgerGatewayHeaders(jsonBase),
+    })
     const contracts: Record<string, unknown>[] = []
     let messageCount = 0
     const TIMEOUT_MS = 45000 // 45s — leave 15s buffer for the 60s Vercel limit

@@ -141,7 +141,9 @@ function streamActiveContracts(
 ): Promise<Record<string, unknown>[]> {
   return new Promise((resolve, reject) => {
     const wsUrl = jsonBase.replace(/^http/, 'ws') + '/v2/state/active-contracts'
-    const ws = new WebSocket(wsUrl, [`jwt.token.${token}`, 'daml.ws.auth'])
+    const ws = new WebSocket(wsUrl, [`jwt.token.${token}`, 'daml.ws.auth'], {
+      headers: ledgerGatewayHeaders(jsonBase),
+    })
     const contracts: Record<string, unknown>[] = []
     const TIMEOUT_MS = 55000
     const timer = setTimeout(() => { ws.close(); resolve(contracts) }, TIMEOUT_MS)

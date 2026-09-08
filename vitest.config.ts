@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.{ts,tsx}', 'lib/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}', 'lib/**/*.test.ts', 'docker/ledger-gateway/**/*.test.ts'],
   },
   resolve: {
     alias: {

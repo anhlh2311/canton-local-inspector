@@ -101,11 +101,18 @@ If NPM returns HTML `502 Bad Gateway` (OpenResty page), Caddy is not listening �
 
 ## Load All (WebSocket)
 
-`streamActiveContractsWs` connects from the **browser** to `jsonApiUrl` as `wss://…`. It does not go through the inspector proxy, so it cannot send the gateway secret.
+`streamActiveContractsWs` connects from the **browser** to `jsonApiUrl` as `wss://…`. Browsers cannot send `X-Ledger-Gateway-Secret`.
 
-HTTP queries (Overview, Parties, Contracts without Load All) work from local and Vercel.
+Caddy allows that hop **without** the secret only when all of these are true:
 
-Load All works only if the user's browser can reach the gateway **and** you allow WebSocket without the secret (not enabled here) or the user is on the VPN. Prefer HTTP queries, or run Load All from a machine that can reach the ledger directly.
+- Host is `LEDGER_GATEWAY_HOSTNAME` (`inspector-ledger.madeintoilet.com`)
+- `Upgrade: websocket`
+- `Sec-WebSocket-Protocol` contains `jwt.token.` (Canton JSON API auth)
+- Path is `/v2/state/active-contracts` or `/{tenant}/v2/state/active-contracts`
+
+HTTP ledger/validator/Keycloak calls still need the secret. Cron and the local indexer send the secret on Node `ws` clients as well.
+
+NPM Proxy Hosts must have Websockets enabled (they already do if HTTP through the gateway works).
 
 ## 502 from `/api/auth/token`
 
