@@ -113,8 +113,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!response.ok) {
       const errorText = (await response.text()).trim()
       let tokenHost = ''
+      let tokenPath = ''
       try {
-        tokenHost = new URL(auth.tokenUrl).host
+        const parsed = new URL(auth.tokenUrl)
+        tokenHost = parsed.host
+        tokenPath = parsed.pathname
       } catch {
         /* ignore */
       }
@@ -122,6 +125,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         error: 'Token exchange failed',
         details: errorText || `${response.status} ${response.statusText}`.trim(),
         tokenHost,
+        tokenPath,
         upstreamStatus: response.status,
       })
     }

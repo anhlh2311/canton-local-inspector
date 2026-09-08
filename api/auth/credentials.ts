@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { jwtVerify } from 'jose'
 import { Redis } from '@upstash/redis'
+import { mergeNodeCredentials, publicCredentialFields } from '../../lib/nodeCredentials.js'
 
 /**
  * Manage OAuth2 credentials for dynamically-added nodes.
@@ -8,7 +9,7 @@ import { Redis } from '@upstash/redis'
  *
  * POST   /api/auth/credentials  — Save credentials for a node
  * DELETE /api/auth/credentials  — Remove credentials for a node
- * GET    /api/auth/credentials?nodeId=xxx — Check if credentials exist (no secrets returned)
+ * GET    /api/auth/credentials?nodeId=xxx — Public fields only (no clientSecret)
  */
 
 interface StoredCredentials {
@@ -56,11 +57,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'POST') {
     const { nodeId, tokenUrl, clientId, clientSecret, audience, validatorAudience } = req.body ?? {}
-    if (!nodeId || !tokenUrl || !clientId || !clientSecret) {
-      return res.status(400).json({ error: 'Missing required fields: nodeId, tokenUrl, clientId, clientSecret' })
+    if (!nodeId) {
+      return res.status(400).json({ error: 'Missing required field: nodeId' })
     }
 
-    const creds: StoredCredentials = { tokenUrl, clientId, clientSecret, audience: audience || '', validatorAudience }
+    const existing = await redis.get<StoredCredentials>(kvKey(nodeId))
+    const creds = mergeNodeCredentials(existing, {
+      tokenUrl, clientId, clientSecret, audience, validatorAudience,
+    })
+    if (!creds) {
+      return res.status(400).json({
+        error: 'Missing required fields: tokenUrl, clientId, clientSecret',
+        details: existing
+          ? 'Provide tokenUrl and clientId to update; clientSecret can be omitted to keep the stored secret.'
+          : 'First-time save requires tokenUrl, clientId, and clientSecret.',
+      })
+    }
+
     await redis.set(kvKey(nodeId), creds)
     return res.status(200).json({ ok: true })
   }
@@ -80,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Missing nodeId query param' })
     }
     const creds = await redis.get<StoredCredentials>(kvKey(nodeId))
-    return res.status(200).json({ exists: !!creds })
+    return res.status(200).json(publicCredentialFields(creds))
   }
 
   return res.status(405).json({ error: 'Method not allowed' })

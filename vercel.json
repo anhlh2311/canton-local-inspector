@@ -7,6 +7,9 @@
     "api/auth/token.ts": {
       "includeFiles": "lib/**"
     },
+    "api/auth/credentials.ts": {
+      "includeFiles": "lib/**"
+    },
     "api/proxy.ts": {
       "includeFiles": "lib/**"
     },

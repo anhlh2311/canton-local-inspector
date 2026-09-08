@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { nodesAtom, refreshIntervalAtom, selectedNodeIdAtom, autoQueryContractsAtom } from '@/stores/nodeStore'
 import { DEFAULT_NODES } from '@/constants/nodes'
-import { saveNodeCredentials, deleteNodeCredentials, triggerIndexRefresh, saveServerNodeConfig, deleteServerNodeConfig } from '@/api/canton'
+import { saveNodeCredentials, deleteNodeCredentials, fetchNodeCredentials, triggerIndexRefresh, saveServerNodeConfig, deleteServerNodeConfig } from '@/api/canton'
 import { useCronMeta } from '@/hooks/useCantonQuery'
 import { useAuth } from '@/context/AuthContext'
 import { useQueryClient } from '@tanstack/react-query'
@@ -120,7 +120,7 @@ function AuthConfigForm({ auth, onChange, secretOverride }: {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           <div className="col-span-2">
             <label className="text-[10px] text-muted-foreground">Token URL</label>
-            <Input value={auth.tokenUrl} onChange={(e) => onChange({ ...auth, tokenUrl: e.target.value })} placeholder="https://your-tenant.auth0.com/oauth/token" />
+            <Input value={auth.tokenUrl} onChange={(e) => onChange({ ...auth, tokenUrl: e.target.value })} placeholder="https://inspector-auth.example/kairo/auth/realms/…/token" />
           </div>
           <div>
             <label className="text-[10px] text-muted-foreground">Client ID</label>
@@ -192,12 +192,12 @@ function NodeConfigCard({
           }
           // Save node config to server (always, so URL/port changes are persisted)
           await saveServerNodeConfig(serverForm)
-          // Save credentials if a new secret was provided
-          if (secretInput) {
+          // Always persist OAuth metadata. Omit secret to keep the Redis value.
+          if (form.auth.tokenUrl && form.auth.clientId) {
             await saveNodeCredentials(form.id, {
               tokenUrl: form.auth.tokenUrl,
               clientId: form.auth.clientId,
-              clientSecret: secretInput,
+              clientSecret: secretInput || undefined,
               audience: form.auth.audience,
               validatorAudience: form.auth.validatorAudience,
             })
@@ -229,7 +229,36 @@ function NodeConfigCard({
 
   const handleCancel = () => {
     setForm(node)
+    setSecretInput('')
     setEditing(false)
+  }
+
+  const startEdit = async () => {
+    setForm(node)
+    setSecretInput('')
+    setSaveError(null)
+    setEditing(true)
+    if (!(isVercel && isAdmin && node.auth.mode === 'oauth2')) return
+    try {
+      const stored = await fetchNodeCredentials(node.id)
+      if (!stored.exists) return
+      setHasServerCreds(true)
+      setForm((current) => {
+        if (current.auth.mode !== 'oauth2') return current
+        return {
+          ...current,
+          auth: {
+            ...current.auth,
+            tokenUrl: stored.tokenUrl || current.auth.tokenUrl,
+            clientId: stored.clientId || current.auth.clientId,
+            audience: stored.audience || current.auth.audience,
+            validatorAudience: stored.validatorAudience || current.auth.validatorAudience,
+          },
+        }
+      })
+    } catch {
+      /* keep empty form fields; save still works if the admin re-enters them */
+    }
   }
 
   const isLocal = node.jsonApiUrl === 'http://localhost'
@@ -266,7 +295,7 @@ function NodeConfigCard({
               </Button>
             ) : (
               <>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => editing ? handleCancel() : setEditing(true)} title={editing ? 'Cancel' : 'Edit'}>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => editing ? handleCancel() : void startEdit()} title={editing ? 'Cancel' : 'Edit'}>
                   {editing ? <X className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
                 </Button>
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onDelete} title="Delete">
@@ -408,7 +437,7 @@ function NodeConfigCard({
             {isVercel && form.auth.mode === 'oauth2' && (
               <div className="rounded-md bg-muted/50 p-2 text-[10px] text-muted-foreground">
                 {isAdmin ? (
-                  <>Node configuration and credentials stored <strong>server-side</strong> in Redis. Shared across all users.</>
+                  <>Credentials live in Redis, not on the node card. Saving Token URL updates the stored URL even if you leave the client secret blank. Use the full token path, e.g. <span className="font-mono">https://inspector-auth.madeintoilet.com/kairo/auth/realms/…/token</span> — not just <span className="font-mono">/kairo</span>.</>
                 ) : (
                   <>Credentials stored <strong>in your browser only</strong>. The client secret is never sent to our server — token exchange happens directly with the OAuth provider.</>
                 )}

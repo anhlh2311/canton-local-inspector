@@ -17,12 +17,25 @@ import type {
 
 const isVercel = import.meta.env.VITE_DEPLOY_ENV === 'vercel'
 
-/** Save OAuth2 credentials server-side in Vercel KV (never stored in browser). */
+/** Save OAuth2 credentials server-side in Vercel KV (never stored in browser).
+ *  clientSecret may be omitted to keep the secret already stored in Redis. */
 export async function saveNodeCredentials(nodeId: string, creds: {
-  tokenUrl: string; clientId: string; clientSecret: string;
+  tokenUrl: string; clientId: string; clientSecret?: string;
   audience: string; validatorAudience?: string;
 }): Promise<void> {
   await axios.post('/api/auth/credentials', { nodeId, ...creds })
+}
+
+/** Public OAuth2 fields for a node (never includes clientSecret). */
+export async function fetchNodeCredentials(nodeId: string): Promise<{
+  exists: boolean
+  tokenUrl?: string
+  clientId?: string
+  audience?: string
+  validatorAudience?: string
+}> {
+  const res = await axios.get('/api/auth/credentials', { params: { nodeId } })
+  return res.data
 }
 
 /** Remove OAuth2 credentials from server-side storage. */
