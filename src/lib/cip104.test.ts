@@ -75,6 +75,7 @@ describe('attributeTraffic TX_1 Tradeproposal', () => {
     expect(result.weights.find((w) => w.partyId === KAIRO)?.weight).toBe(19377)
     expect(result.weights.find((w) => w.partyId === FIVE)?.weight).toBe(7945)
     expect(result.weightSum).toBe(27322)
+    expect(result.roundingResidue).toBe(2)
   })
 
   it('returns zero weights when nothing is ticked', () => {
@@ -88,6 +89,7 @@ describe('attributeTraffic TX_1 Tradeproposal', () => {
     expect(result.leftover).toBe(27324)
     expect(result.weights).toEqual([])
     expect(result.weightSum).toBe(0)
+    expect(result.roundingResidue).toBe(0)
   })
 })
 
@@ -112,6 +114,7 @@ describe('attributeTraffic sole featured app', () => {
     })
     expect(result.weights[0]?.weight).toBe(8572)
     expect(result.weightSum).toBe(8572)
+    expect(result.roundingResidue).toBe(0)
   })
 
   it('does not treat the DSO party as a featured app', () => {

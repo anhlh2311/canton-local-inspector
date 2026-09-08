@@ -32,6 +32,7 @@ export interface AttributionResult {
   appEnvelopeTraffic: number
   leftover: number
   weightSum: number
+  roundingResidue: number
   envelopes: EnvelopeAttribution[]
   weights: AppWeight[]
 }
@@ -122,6 +123,7 @@ export function attributeTraffic(input: AttributeTrafficInput): AttributionResul
     appEnvelopeTraffic,
     leftover: total - appEnvelopeTraffic,
     weightSum,
+    roundingResidue: weightSum === 0 ? 0 : total - weightSum,
     envelopes,
     weights,
   }

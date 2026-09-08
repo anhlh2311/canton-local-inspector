@@ -13,11 +13,15 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Input } from '@/components/ui/input'
 import { attributeTraffic, uniqueConfirmers, partyHint } from '@/lib/cip104'
 import { FEATURED_APP_MODE, featuredAppCandidates, nextRemembered, resolveFeaturedApps } from '@/lib/featuredApps'
+import { organizationOf, sumWeightsByOrganization } from '@/lib/organizations'
 import {
   carryTicksAtom,
+  groupByOrganizationAtom,
   lighthouseNetworkAtom,
+  partyOrganizationLabelsAtom,
   rememberedFeaturedPartyIdsAtom,
 } from '@/stores/cip104Store'
 import type { LighthouseTransactionResponse } from '@/types/lighthouse'
@@ -60,6 +64,8 @@ export function TrafficAttributionPage() {
   const [network, setNetwork] = useAtom(lighthouseNetworkAtom)
   const [carryTicks, setCarryTicks] = useAtom(carryTicksAtom)
   const [remembered, setRemembered] = useAtom(rememberedFeaturedPartyIdsAtom)
+  const [groupByOrganization, setGroupByOrganization] = useAtom(groupByOrganizationAtom)
+  const [orgLabels, setOrgLabels] = useAtom(partyOrganizationLabelsAtom)
 
   const [updateId, setUpdateId] = useState('')
   const [searching, setSearching] = useState(false)
@@ -85,6 +91,11 @@ export function TrafficAttributionPage() {
       activityWeight: 1,
     })
   }, [traffic, views, checked])
+
+  const organizationWeights = useMemo(() => {
+    if (!attribution) return []
+    return sumWeightsByOrganization(attribution.weights, orgLabels)
+  }, [attribution, orgLabels])
 
   const runSearch = useCallback(async (id: string, net: LighthouseNetwork) => {
     const trimmed = id.trim()
@@ -145,6 +156,13 @@ export function TrafficAttributionPage() {
       : checked.filter((p) => p !== partyId)
     setChecked(next)
     setRemembered(nextRemembered(remembered, confirmers, next))
+  }
+
+  function onOrgLabelChange(partyId: string, value: string) {
+    const next = { ...orgLabels }
+    if (value.trim()) next[partyId] = value
+    else delete next[partyId]
+    setOrgLabels(next)
   }
 
   function onNetworkChange(next: LighthouseNetwork) {
@@ -272,7 +290,17 @@ export function TrafficAttributionPage() {
                   value={`${attribution.weightSum.toLocaleString()} B`}
                   valueClassName="text-emerald-600 dark:text-emerald-400"
                 />
+                <MetaItem
+                  label="Rounding"
+                  value={`${attribution.roundingResidue.toLocaleString()} B`}
+                  valueClassName="text-muted-foreground"
+                  valueTestId="tx-rounding"
+                />
               </div>
+              <p className="text-[10px] text-muted-foreground">
+                Leftover is envelopes with no featured confirmer. Rounding is bytes dropped by CIP-104 integer division
+                {attribution.roundingResidue > 0 ? ` (${attribution.total.toLocaleString()} − ${attribution.weightSum.toLocaleString()}).` : '.'}
+              </p>
               {!hasVisibleEvents(response.events) && (
                 <p className="text-xs text-muted-foreground">
                   Events hidden (privacy). Attribution uses the mediator verdict.
@@ -316,6 +344,17 @@ export function TrafficAttributionPage() {
                       truncate={0}
                       className="text-[10px] text-muted-foreground"
                     />
+                    <label className="mt-1 block text-[10px] text-muted-foreground" htmlFor={`org-${index}`}>
+                      Organization
+                    </label>
+                    <Input
+                      id={`org-${index}`}
+                      aria-label={`Organization for ${partyHint(partyId)}`}
+                      className="h-7 text-xs"
+                      placeholder={partyHint(partyId)}
+                      value={orgLabels[partyId] ?? ''}
+                      onChange={(e) => onOrgLabelChange(partyId, e.target.value)}
+                    />
                   </div>
                 </div>
               ))}
@@ -355,20 +394,56 @@ export function TrafficAttributionPage() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Per-app weights</CardTitle>
+              <CardDescription>
+                Assign the same organization name to roll parties together. Totals are CIP-104 integer weights.
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={groupByOrganization}
+                  onCheckedChange={setGroupByOrganization}
+                  id="group-by-org"
+                />
+                <label htmlFor="group-by-org" className="text-xs text-muted-foreground">
+                  Group by organization
+                </label>
+              </div>
               {attribution.weights.length === 0 && (
                 <p className="text-xs text-muted-foreground">Tick featured confirmers to attribute leftover traffic.</p>
               )}
-              {attribution.weights.map((w) => (
-                <div key={w.partyId} className="flex items-center justify-between gap-2 text-sm">
-                  <div>
-                    <div className="font-medium">{w.hint}</div>
-                    <IdDisplay id={w.partyId} truncate={12} />
-                  </div>
-                  <span className="font-mono">{w.weight.toLocaleString()}</span>
-                </div>
-              ))}
+              {groupByOrganization
+                ? organizationWeights.map((g) => (
+                    <div key={g.organization} className="space-y-1" data-testid={`org-group-${g.organization}`}>
+                      <div className="flex items-center justify-between gap-2 text-sm">
+                        <div className="font-medium">{g.organization}</div>
+                        <span className="font-mono" data-testid={`org-weight-${g.organization}`}>
+                          {g.weight.toLocaleString()}
+                        </span>
+                      </div>
+                      {g.members.map((w) => (
+                        <div key={w.partyId} className="flex items-center justify-between gap-2 pl-3 text-xs text-muted-foreground">
+                          <div>
+                            <div>{w.hint}</div>
+                            <IdDisplay id={w.partyId} truncate={12} />
+                          </div>
+                          <span className="font-mono">{w.weight.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))
+                : attribution.weights.map((w) => (
+                    <div key={w.partyId} className="flex items-center justify-between gap-2 text-sm">
+                      <div>
+                        <div className="font-medium">{w.hint}</div>
+                        <IdDisplay id={w.partyId} truncate={12} />
+                        <div className="text-[10px] text-muted-foreground">
+                          {organizationOf(w.partyId, w.hint, orgLabels)}
+                        </div>
+                      </div>
+                      <span className="font-mono">{w.weight.toLocaleString()}</span>
+                    </div>
+                  ))}
             </CardContent>
           </Card>
 

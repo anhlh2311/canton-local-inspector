@@ -21,3 +21,17 @@ export const rememberedFeaturedPartyIdsAtom = atomWithStorage<string[]>(
   undefined,
   { getOnInit: true },
 )
+
+export const groupByOrganizationAtom = atomWithStorage<boolean>(
+  'canton-inspector-cip104-group-by-org',
+  false,
+  undefined,
+  { getOnInit: true },
+)
+
+export const partyOrganizationLabelsAtom = atomWithStorage<Record<string, string>>(
+  'canton-inspector-cip104-org-labels',
+  {},
+  undefined,
+  { getOnInit: true },
+)

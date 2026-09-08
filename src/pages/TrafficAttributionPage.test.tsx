@@ -199,4 +199,45 @@ describe('TrafficAttributionPage searches', () => {
     expect(await screen.findByTestId('tx-round')).toHaveProperty('textContent', '2')
     expect(screen.queryByTestId('tx-round')?.textContent).not.toBe('1')
   })
+
+  it('shows rounding residue and sums weights by organization', async () => {
+    const kairo = 'kairo-executor::1220a'
+    const devnet = 'angelhack_devnet::1220a'
+    const response = validResponse('org-tx', 54919)
+    response.events.verdict!.traffic_summary = {
+      total_traffic_cost: 1001,
+      envelope_traffic_summaries: [
+        { view_ids: [], traffic_cost: 201 },
+        { view_ids: [1], traffic_cost: 800 },
+      ],
+    }
+    response.events.verdict!.transaction_views!.views = [{
+      view_id: 1,
+      informees: [],
+      sub_views: [],
+      confirming_parties: [{ parties: [kairo, devnet], threshold: 2 }],
+    }]
+    mockedFetch.mockResolvedValue(response)
+
+    render(
+      <Provider>
+        <MemoryRouter initialEntries={['/?updateId=org-tx&network=devnet']}>
+          <TrafficAttributionPage />
+        </MemoryRouter>
+      </Provider>,
+    )
+
+    expect(await screen.findByText('kairo-executor')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('kairo-executor'))
+    fireEvent.click(screen.getByLabelText('angelhack_devnet'))
+
+    expect(await screen.findByTestId('tx-rounding')).toHaveProperty('textContent', '1 B')
+
+    fireEvent.change(screen.getByLabelText('Organization for kairo-executor'), { target: { value: 'AH' } })
+    fireEvent.change(screen.getByLabelText('Organization for angelhack_devnet'), { target: { value: 'AH' } })
+    fireEvent.click(screen.getByLabelText('Group by organization'))
+
+    expect(await screen.findByTestId('org-group-AH')).toBeTruthy()
+    expect(screen.getByTestId('org-weight-AH')).toHaveProperty('textContent', '1,000')
+  })
 })
