@@ -5,3 +5,10 @@ export declare function ledgerGatewayHeaders(
   secret?: string,
   hostsCsv?: string,
 ): Record<string, string>
+
+export declare function jsonApiHeaders(
+  jsonBase: string,
+  token: string,
+  secret?: string,
+  hostsCsv?: string,
+): Record<string, string>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LEDGER_GATEWAY_SECRET_HEADER, ledgerGatewayHeaders } from './ledgerGateway.js'
+import { LEDGER_GATEWAY_SECRET_HEADER, jsonApiHeaders, ledgerGatewayHeaders } from './ledgerGateway.js'
 
 describe('ledgerGatewayHeaders', () => {
   it('is empty when secret or hosts are missing', () => {
@@ -24,5 +24,29 @@ describe('ledgerGatewayHeaders', () => {
         'inspector-ledger.madeintoilet.com,inspector-validator.madeintoilet.com,inspector-auth.madeintoilet.com',
       ),
     ).toEqual({ [LEDGER_GATEWAY_SECRET_HEADER]: 's3cret' })
+  })
+})
+
+describe('jsonApiHeaders', () => {
+  it('attaches bearer plus gateway secret for tenant-prefixed ledger URLs', () => {
+    expect(
+      jsonApiHeaders(
+        'https://inspector-ledger.madeintoilet.com/kairo',
+        'jwt-token',
+        's3cret',
+        'inspector-ledger.madeintoilet.com',
+      ),
+    ).toEqual({
+      Authorization: 'Bearer jwt-token',
+      'Content-Type': 'application/json',
+      [LEDGER_GATEWAY_SECRET_HEADER]: 's3cret',
+    })
+  })
+
+  it('omits the gateway secret for non-gateway ledger URLs', () => {
+    expect(jsonApiHeaders('https://ledger-api-devnet.kairo.ag/api/json-api', 'jwt-token', 's3cret', 'inspector-ledger.madeintoilet.com')).toEqual({
+      Authorization: 'Bearer jwt-token',
+      'Content-Type': 'application/json',
+    })
   })
 })

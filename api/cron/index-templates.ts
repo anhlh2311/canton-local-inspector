@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { Redis } from '@upstash/redis'
 import { SignJWT } from 'jose'
 import WebSocket from 'ws'
-import { ledgerGatewayHeaders } from '../../lib/ledgerGateway.js'
+import { jsonApiHeaders, ledgerGatewayHeaders } from '../../lib/ledgerGateway.js'
 
 /**
  * Cron job: Index templates for all configured Canton nodes.
@@ -227,7 +227,7 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
   console.log(`${TAG}: starting indexing — jsonBase=${jsonBase}, authMode=${node.authMode}`)
 
   const jsonToken = await getJsonApiToken(node, redis)
-  const jsonHeaders = { 'Authorization': `Bearer ${jsonToken}`, 'Content-Type': 'application/json' }
+  const jsonHeaders = jsonApiHeaders(jsonBase, jsonToken)
 
   // Get ledger end offset
   const ledgerEndRes = await fetch(`${jsonBase}/v2/state/ledger-end`, { headers: jsonHeaders })

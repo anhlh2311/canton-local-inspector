@@ -3,7 +3,7 @@ import { SignJWT } from 'jose'
 import WebSocket from 'ws'
 import { getStorage } from '../storage/index.js'
 import type { TemplateEntry, NodeAuthConfig } from '../storage/interface.js'
-import { ledgerGatewayHeaders } from '../../lib/ledgerGateway.js'
+import { jsonApiHeaders, ledgerGatewayHeaders } from '../../lib/ledgerGateway.js'
 
 const router = Router()
 
@@ -169,7 +169,7 @@ async function indexNode(node: NodeConfig): Promise<TemplateEntry[]> {
   const jsonBase = buildFullUrl(node.jsonApiUrl, node.jsonApiPort)
   const templates = new Map<string, TemplateEntry>()
   const jsonToken = await getJsonApiToken(node)
-  const jsonHeaders = { 'Authorization': `Bearer ${jsonToken}`, 'Content-Type': 'application/json' }
+  const jsonHeaders = jsonApiHeaders(jsonBase, jsonToken)
 
   const ledgerEndRes = await fetch(`${jsonBase}/v2/state/ledger-end`, { headers: jsonHeaders })
   if (!ledgerEndRes.ok) throw new Error(`Ledger end failed: ${ledgerEndRes.status}`)
