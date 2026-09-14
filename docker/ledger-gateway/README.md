@@ -27,13 +27,9 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Put Caddy on the NPM Docker network so NPM can use the container name:
+Compose joins NPM’s Docker network (`nginx-proxy_canton-dex-network`) as `ledger-gateway`, so recreates keep the Proxy Hosts working. Override the name with `LEDGER_GATEWAY_NPM_NETWORK` if NPM uses a different network.
 
-```bash
-docker network connect nginx-proxy_canton-dex-network ledger-gateway-ledger-gateway-1
-```
-
-In NPM, add three Proxy Hosts (Let’s Encrypt, Force SSL, Websockets on), all forwarding to `http://ledger-gateway:8080` (or `http://172.17.0.1:8080` if you keep published ports and skip the network connect). Do not override Host.
+In NPM, add three Proxy Hosts (Let’s Encrypt, Force SSL, Websockets on), all forwarding to `http://ledger-gateway:8080`. Do not override Host.
 
 | Domain | Forward to |
 |---|---|
@@ -97,7 +93,7 @@ tokenUrl=https://inspector-auth.madeintoilet.com/kairo/auth/realms/catalyst-cant
 
 `*_UPSTREAM` may include a path such as `/api/json-api`. Caddy `reverse_proxy` cannot take a path; the generator uses scheme/host/port and rewrites that path onto the request. Set inspector `jsonApiUrl` to `https://inspector-ledger.madeintoilet.com/mcph` (tenant only), not `.../mcph/api/json-api`.
 
-If NPM returns HTML `502 Bad Gateway` (OpenResty page), Caddy is not listening — usually the generator exited. `docker compose logs ledger-gateway`. Incomplete tenants are skipped; the unprefixed Angelhack routes should still start.
+If NPM returns HTML `502 Bad Gateway` (OpenResty page), either Caddy is not listening (generator exited — `docker compose logs ledger-gateway`) or Caddy is not on `nginx-proxy_canton-dex-network` so NPM cannot resolve `ledger-gateway`. Incomplete tenants are skipped; the unprefixed Angelhack routes should still start.
 
 ## Load All (WebSocket)
 

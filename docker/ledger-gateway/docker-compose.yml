@@ -23,3 +23,13 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     entrypoint: ["/bin/sh", "/generate-caddyfile.sh"]
+    networks:
+      default: {}
+      npm:
+        aliases:
+          - ledger-gateway
+
+networks:
+  npm:
+    name: ${LEDGER_GATEWAY_NPM_NETWORK:-nginx-proxy_canton-dex-network}
+    external: true
