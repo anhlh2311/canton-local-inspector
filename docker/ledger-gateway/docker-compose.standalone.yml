@@ -1,0 +1,34 @@
+# New server with no existing Nginx Proxy Manager.
+# Creates the edge network and runs NPM in front of Caddy (TLS on 80/443).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.standalone.yml up -d
+#
+# Do not use this overlay on the jump host — NPM already binds 80/443 there.
+services:
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "81:81"
+    environment:
+      DISABLE_IPV6: "true"
+    volumes:
+      - npm-data:/data
+      - npm-letsencrypt:/etc/letsencrypt
+    networks:
+      - npm
+
+  ledger-gateway:
+    ports: !reset
+      - "127.0.0.1:${LEDGER_GATEWAY_PUBLISH_PORT:-8080}:${LEDGER_GATEWAY_PORT:-8080}"
+
+networks:
+  npm:
+    name: ${LEDGER_GATEWAY_NPM_NETWORK:-nginx-proxy_canton-network}
+    external: false
+
+volumes:
+  npm-data:
+  npm-letsencrypt:

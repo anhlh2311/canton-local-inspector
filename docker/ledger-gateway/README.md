@@ -20,6 +20,10 @@ Vercel function IPs are not stable unless you buy Static IPs. The gateway authen
 
 ## Run on the whitelist host
 
+The Canton JSON API, validator, and token URL must still be reachable from this machine (VPN / allowlist), same as the existing jump host.
+
+### Existing Nginx Proxy Manager
+
 ```bash
 cd docker/ledger-gateway
 cp .env.example .env
@@ -27,15 +31,34 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Compose joins NPM’s Docker network (`nginx-proxy_canton-dex-network`) as `ledger-gateway`, so recreates keep the Proxy Hosts working. Override the name with `LEDGER_GATEWAY_NPM_NETWORK` if NPM uses a different network.
+Compose joins NPM’s Docker network (`nginx-proxy_canton-network`) as `ledger-gateway`, so recreates keep the Proxy Hosts working. Override the name with `LEDGER_GATEWAY_NPM_NETWORK` if NPM uses a different network.
 
 In NPM, add three Proxy Hosts (Let’s Encrypt, Force SSL, Websockets on), all forwarding to `http://ledger-gateway:8080`. Do not override Host.
+
+### New server (no nginx yet)
+
+Point DNS A records for the three public hostnames at this server, then create the edge network and NPM in the same compose project:
+
+```bash
+cd docker/ledger-gateway
+cp .env.example .env
+# set LEDGER_GATEWAY_SECRET, public hostnames, and VPN upstreams
+docker compose -f docker-compose.yml -f docker-compose.standalone.yml up -d
+```
+
+That overlay **creates** `nginx-proxy_canton-network` and starts Nginx Proxy Manager on ports 80, 443, and 81. Do not use it on a host that already binds 80/443.
+
+1. Open `http://<server-ip>:81`. First login is `admin@example.com` / `changeme` — change it immediately.
+2. Add three Proxy Hosts, each forwarding to `http://ledger-gateway:8080` (Websockets on, Scheme http). Do not override Host.
+3. On each host, request a Let’s Encrypt certificate and enable Force SSL.
 
 | Domain | Forward to |
 |---|---|
 | `inspector-ledger.madeintoilet.com` | Caddy → `LEDGER_UPSTREAM` |
 | `inspector-validator.madeintoilet.com` | Caddy → `VALIDATOR_UPSTREAM` |
 | `inspector-auth.madeintoilet.com` | Caddy → `AUTH_UPSTREAM` (token path only) |
+
+Restrict port 81 after setup. Caddy itself is only published on `127.0.0.1:8080` in standalone mode.
 
 ## Inspector env (local `.env.local` and Vercel)
 
@@ -93,7 +116,7 @@ tokenUrl=https://inspector-auth.madeintoilet.com/kairo/auth/realms/catalyst-cant
 
 `*_UPSTREAM` may include a path such as `/api/json-api`. Caddy `reverse_proxy` cannot take a path; the generator uses scheme/host/port and rewrites that path onto the request. Set inspector `jsonApiUrl` to `https://inspector-ledger.madeintoilet.com/mcph` (tenant only), not `.../mcph/api/json-api`.
 
-If NPM returns HTML `502 Bad Gateway` (OpenResty page), either Caddy is not listening (generator exited — `docker compose logs ledger-gateway`) or Caddy is not on `nginx-proxy_canton-dex-network` so NPM cannot resolve `ledger-gateway`. Incomplete tenants are skipped; the unprefixed Angelhack routes should still start.
+If NPM returns HTML `502 Bad Gateway` (OpenResty page), either Caddy is not listening (generator exited — `docker compose logs ledger-gateway`) or Caddy is not on `nginx-proxy_canton-network` so NPM cannot resolve `ledger-gateway`. Incomplete tenants are skipped; the unprefixed Angelhack routes should still start.
 
 ## Load All (WebSocket)
 
@@ -134,5 +157,5 @@ docker exec ledger-gateway-ledger-gateway-1 wget -S -O- \
 
 - Expose Caddy without TLS in front (NPM on 443)
 - Put `LEDGER_GATEWAY_SECRET` in any `VITE_*` variable
-- Allowlist Vercel IPs on the ledger, validator, or Keycloak — allowlist this jump host only
+- Allowlist Vercel IPs on the ledger, validator, or Keycloak — allowlist this gateway host only
 - Proxy Keycloak admin; only the token path is enabled
