@@ -13,13 +13,15 @@ Canton WebSocket uses **subprotocols** for authentication (not HTTP headers):
 
 After connecting, send a single JSON message with the query filter. The WebSocket supports the same filter types as the HTTP API.
 
+Canton 3.6 rejects the legacy top-level `filter` and `verbose` fields (`DEPRECATED_API_DISABLED`). Nest both under `eventFormat`. `activeAtOffset` stays top-level.
+
 ### Wildcard (all contracts)
 
 Streams every active contract visible to any party on the participant:
 
 ```json
 {
-  "filter": {
+  "eventFormat": {
     "filtersForAnyParty": {
       "cumulative": [{
         "identifierFilter": {
@@ -28,9 +30,9 @@ Streams every active contract visible to any party on the participant:
           }
         }
       }]
-    }
+    },
+    "verbose": false
   },
-  "verbose": false,
   "activeAtOffset": 12345
 }
 ```
@@ -41,7 +43,7 @@ Streams all contracts for a specific party:
 
 ```json
 {
-  "filter": {
+  "eventFormat": {
     "filtersByParty": {
       "<party-id>::<party-fingerprint>": {
         "cumulative": [{
@@ -52,9 +54,9 @@ Streams all contracts for a specific party:
           }
         }]
       }
-    }
+    },
+    "verbose": true
   },
-  "verbose": true,
   "activeAtOffset": 12345
 }
 ```
@@ -65,7 +67,7 @@ Streams only contracts matching a specific template for a party. This is the mos
 
 ```json
 {
-  "filter": {
+  "eventFormat": {
     "filtersByParty": {
       "<party-id>": {
         "cumulative": [{
@@ -79,9 +81,9 @@ Streams only contracts matching a specific template for a party. This is the mos
           }
         }]
       }
-    }
+    },
+    "verbose": true
   },
-  "verbose": true,
   "activeAtOffset": 12345
 }
 ```
@@ -90,12 +92,12 @@ Streams only contracts matching a specific template for a party. This is the mos
 
 | Parameter | Description |
 | --------- | ----------- |
-| `filtersForAnyParty` | Match contracts visible to any party on the participant |
-| `filtersByParty` | Match contracts for specific party IDs |
+| `eventFormat.filtersForAnyParty` | Match contracts visible to any party on the participant |
+| `eventFormat.filtersByParty` | Match contracts for specific party IDs |
 | `WildcardFilter` | Match all templates |
 | `TemplateFilter` | Match a specific `packageHash:Module:Entity` template ID |
 | `activeAtOffset` | Ledger offset snapshot (get from `GET /v2/state/ledger-end`) |
-| `verbose` | `true` includes full contract arguments; `false` for faster streaming |
+| `eventFormat.verbose` | `true` includes full contract arguments; `false` for faster streaming |
 | `includeCreatedEventBlob` | Include binary event blob (usually `false`) |
 
 ### Response format
@@ -189,16 +191,16 @@ const templates = {};
 ws.on('open', () => {
   console.log('Connected. Offset:', offset);
   ws.send(JSON.stringify({
-    filter: {
+    eventFormat: {
       filtersForAnyParty: {
         cumulative: [{
           identifierFilter: {
             WildcardFilter: { value: { includeCreatedEventBlob: false } }
           }
         }]
-      }
+      },
+      verbose: false
     },
-    verbose: false,
     activeAtOffset: offset
   }));
 });
@@ -251,7 +253,7 @@ const contracts = [];
 ws.on('open', () => {
   console.log('Streaming template:', templateId.split(':').pop());
   ws.send(JSON.stringify({
-    filter: {
+    eventFormat: {
       filtersByParty: {
         [party]: {
           cumulative: [{
@@ -262,9 +264,9 @@ ws.on('open', () => {
             }
           }]
         }
-      }
+      },
+      verbose: true
     },
-    verbose: true,
     activeAtOffset: offset
   }));
 });
@@ -290,7 +292,7 @@ cd /path/to/canton-local-inspector && \
 TOKEN=$(node -e "const{SignJWT}=require('jose');new SignJWT({sub:'ledger-api-user',aud:'https://canton.network.global',iss:'unsafe-auth'}).setProtectedHeader({alg:'HS256',typ:'JWT'}).setIssuedAt().setExpirationTime('1h').sign(new TextEncoder().encode('unsafe')).then(t=>console.log(t))") && \
 OFFSET=$(curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:4975/v2/state/ledger-end" | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d).offset))") && \
 echo "Offset: $OFFSET" && \
-node -e "const W=require('ws'),t=process.argv[1],o=parseInt(process.argv[2]),w=new W('ws://localhost:4975/v2/state/active-contracts',['jwt.token.'+t,'daml.ws.auth']);let n=0,m={};w.on('open',()=>{console.log('Connected');w.send(JSON.stringify({filter:{filtersForAnyParty:{cumulative:[{identifierFilter:{WildcardFilter:{value:{includeCreatedEventBlob:false}}}}]}},verbose:false,activeAtOffset:o}))});w.on('message',d=>{n++;const e=JSON.parse(d.toString())?.contractEntry?.JsActiveContract?.createdEvent;if(e?.templateId){const k=(e.packageName||'')+':'+e.templateId.split(':').pop();m[k]=(m[k]||0)+1}if(n%1000===0)console.log('...',n)});w.on('close',c=>{console.log('Done:',n);Object.entries(m).sort((a,b)=>b[1]-a[1]).forEach(([k,v])=>console.log(v,k))});w.on('error',e=>console.error(e.message));setTimeout(()=>process.exit(0),60000)" "$TOKEN" "$OFFSET"
+node -e "const W=require('ws'),t=process.argv[1],o=parseInt(process.argv[2]),w=new W('ws://localhost:4975/v2/state/active-contracts',['jwt.token.'+t,'daml.ws.auth']);let n=0,m={};w.on('open',()=>{console.log('Connected');w.send(JSON.stringify({eventFormat:{filtersForAnyParty:{cumulative:[{identifierFilter:{WildcardFilter:{value:{includeCreatedEventBlob:false}}}}]},verbose:false},activeAtOffset:o}))});w.on('message',d=>{n++;const e=JSON.parse(d.toString())?.contractEntry?.JsActiveContract?.createdEvent;if(e?.templateId){const k=(e.packageName||'')+':'+e.templateId.split(':').pop();m[k]=(m[k]||0)+1}if(n%1000===0)console.log('...',n)});w.on('close',c=>{console.log('Done:',n);Object.entries(m).sort((a,b)=>b[1]-a[1]).forEach(([k,v])=>console.log(v,k))});w.on('error',e=>console.error(e.message));setTimeout(()=>process.exit(0),60000)" "$TOKEN" "$OFFSET"
 ```
 
 ---
@@ -348,7 +350,7 @@ Note the `offset` value from the response.
 
 ```json
 {
-  "filter": {
+  "eventFormat": {
     "filtersForAnyParty": {
       "cumulative": [{
         "identifierFilter": {
@@ -357,9 +359,9 @@ Note the `offset` value from the response.
           }
         }
       }]
-    }
+    },
+    "verbose": false
   },
-  "verbose": false,
   "activeAtOffset": 12345
 }
 ```
@@ -370,7 +372,7 @@ Replace `12345` with the offset from step 2.
 
 ```json
 {
-  "filter": {
+  "eventFormat": {
     "filtersByParty": {
       "<party-id>::<party-fingerprint>": {
         "cumulative": [{
@@ -384,9 +386,9 @@ Replace `12345` with the offset from step 2.
           }
         }]
       }
-    }
+    },
+    "verbose": true
   },
-  "verbose": true,
   "activeAtOffset": 12345
 }
 ```

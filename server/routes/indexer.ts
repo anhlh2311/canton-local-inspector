@@ -150,12 +150,12 @@ function streamActiveContracts(
 
     ws.on('open', () => {
       ws.send(JSON.stringify({
-        filter: {
+        eventFormat: {
           filtersForAnyParty: {
             cumulative: [{ identifierFilter: { WildcardFilter: { value: { includeCreatedEventBlob: false } } } }]
-          }
+          },
+          verbose: false,
         },
-        verbose: false,
         activeAtOffset: offset,
       }))
     })
@@ -204,8 +204,8 @@ async function indexNode(node: NodeConfig): Promise<TemplateEntry[]> {
     const res = await fetch(`${jsonBase}/v2/state/active-contracts`, {
       method: 'POST', headers: jsonHeaders,
       body: JSON.stringify({
-        filter: { filtersForAnyParty: { cumulative: [wildcardFilter] } },
-        verbose: false, activeAtOffset: offset,
+        eventFormat: { filtersForAnyParty: { cumulative: [wildcardFilter] }, verbose: false },
+        activeAtOffset: offset,
       }),
     })
     if (res.ok) {
@@ -235,8 +235,8 @@ async function indexNode(node: NodeConfig): Promise<TemplateEntry[]> {
           const res = await fetch(`${jsonBase}/v2/state/active-contracts`, {
             method: 'POST', headers: jsonHeaders,
             body: JSON.stringify({
-              filter: { filtersByParty: { [party]: { cumulative: [wildcardFilter] } } },
-              verbose: false, activeAtOffset: offset,
+              eventFormat: { filtersByParty: { [party]: { cumulative: [wildcardFilter] } }, verbose: false },
+              activeAtOffset: offset,
             }),
           })
           if (res.ok) {

@@ -274,8 +274,7 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
   try {
     console.log(`${TAG}: [HTTP] attempting filtersForAnyParty wildcard...`)
     const httpBody = {
-      filter: { filtersForAnyParty: { cumulative: [wildcardFilter] } },
-      verbose: false,
+      eventFormat: { filtersForAnyParty: { cumulative: [wildcardFilter] }, verbose: false },
       activeAtOffset: offset,
     }
     const res = await fetch(`${jsonBase}/v2/state/active-contracts`, {
@@ -337,8 +336,7 @@ async function indexNode(node: NodeConfig, redis: Redis): Promise<TemplateEntry[
             method: 'POST',
             headers: jsonHeaders,
             body: JSON.stringify({
-              filter: { filtersByParty: { [party]: { cumulative: [wildcardFilter] } } },
-              verbose: false,
+              eventFormat: { filtersByParty: { [party]: { cumulative: [wildcardFilter] } }, verbose: false },
               activeAtOffset: offset,
             }),
           })
@@ -413,14 +411,14 @@ function streamActiveContracts(
     ws.on('open', () => {
       console.log(`[index-templates] [WS] connected, sending filter request with offset=${JSON.stringify(offset)}`)
       ws.send(JSON.stringify({
-        filter: {
+        eventFormat: {
           filtersForAnyParty: {
             cumulative: [{
               identifierFilter: { WildcardFilter: { value: { includeCreatedEventBlob: false } } }
             }]
-          }
+          },
+          verbose: false,
         },
-        verbose: false,
         activeAtOffset: offset,
       }))
     })

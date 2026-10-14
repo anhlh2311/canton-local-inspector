@@ -153,10 +153,14 @@ export interface ActiveContractsFilter {
   filtersForAnyParty?: CumulativeFilter
 }
 
+/**
+ * Canton 3.6 disables the legacy top-level `filter` / `verbose` fields on
+ * POST /v2/state/active-contracts (removed in 3.7). Filters and `verbose`
+ * live under `eventFormat`; `activeAtOffset` stays top-level.
+ */
 export interface ActiveContractsRequest {
-  filter: ActiveContractsFilter
-  verbose: boolean
-  activeAtOffset?: string
+  eventFormat: ActiveContractsFilter & { verbose: boolean }
+  activeAtOffset?: string | number
 }
 
 export interface CreatedEvent {

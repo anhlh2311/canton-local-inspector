@@ -10,6 +10,7 @@ import type {
   ParticipantIdResponse,
   PackagesResponse,
   ActiveContractsRequest,
+  ActiveContractsFilter,
   ActiveContractsResponse,
   ActiveContract,
   DsoPartyResponse,
@@ -272,6 +273,18 @@ export async function getLedgerEnd(node: NodeConfig, token: string): Promise<Led
   return res.data
 }
 
+/** Active-contracts body accepted by Canton 3.6+. */
+function acsQuery(
+  filters: ActiveContractsFilter,
+  verbose: boolean,
+  activeAtOffset?: string | number,
+): ActiveContractsRequest {
+  return {
+    eventFormat: { ...filters, verbose },
+    ...(activeAtOffset !== undefined && activeAtOffset !== '' ? { activeAtOffset } : {}),
+  }
+}
+
 /** Look up a contract by its ID using the events-by-contract-id endpoint.
  *  No party or template needed — uses filtersForAnyParty wildcard. */
 export async function getEventsByContractId(node: NodeConfig, token: string, contractId: string): Promise<unknown> {
@@ -420,19 +433,15 @@ export async function discoverAllContracts(
 
   // Phase 1: Try wildcard — works if total contracts < 200
   try {
-    const res = await client.post('/v2/state/active-contracts', {
-      filter: {
-        filtersByParty: {
-          [partyId]: {
-            cumulative: [{
-              identifierFilter: { WildcardFilter: { value: { includeCreatedEventBlob: false } } }
-            }]
-          }
+    const res = await client.post('/v2/state/active-contracts', acsQuery({
+      filtersByParty: {
+        [partyId]: {
+          cumulative: [{
+            identifierFilter: { WildcardFilter: { value: { includeCreatedEventBlob: false } } }
+          }]
         }
-      },
-      verbose: true,
-      activeAtOffset: offset,
-    })
+      }
+    }, true, offset))
     return res.data as ActiveContract[]
   } catch (err: unknown) {
     if (!isLimitError(err)) throw err
@@ -453,21 +462,17 @@ export async function discoverAllContracts(
   const allContracts: ActiveContract[] = []
   for (const templateId of templateIds) {
     try {
-      const res = await client.post('/v2/state/active-contracts', {
-        filter: {
-          filtersByParty: {
-            [partyId]: {
-              cumulative: [{
-                identifierFilter: {
-                  TemplateFilter: { value: { templateId, includeCreatedEventBlob: false } }
-                }
-              }]
-            }
+      const res = await client.post('/v2/state/active-contracts', acsQuery({
+        filtersByParty: {
+          [partyId]: {
+            cumulative: [{
+              identifierFilter: {
+                TemplateFilter: { value: { templateId, includeCreatedEventBlob: false } }
+              }
+            }]
           }
-        },
-        verbose: true,
-        activeAtOffset: offset,
-      })
+        }
+      }, true, offset))
       allContracts.push(...(res.data as ActiveContract[]))
     } catch {
       // Skip templates that fail (e.g., a single template with >200 instances)
@@ -672,11 +677,11 @@ async function discoverTemplateIds(
 
   // Strategy 2: filtersForAnyParty wildcard — single query, max coverage
   try {
-    const res = await client.post('/v2/state/active-contracts', {
-      filter: { filtersForAnyParty: { cumulative: [wildcardFilter] } },
-      verbose: false,
-      activeAtOffset: offset,
-    })
+    const res = await client.post('/v2/state/active-contracts', acsQuery(
+      { filtersForAnyParty: { cumulative: [wildcardFilter] } },
+      false,
+      offset,
+    ))
     addTemplateIds(res.data as ActiveContract[])
     // Construct additional templates from cross-network knowledge
     for (const tid of constructTemplateIds(node)) templateIds.add(tid)
@@ -697,11 +702,11 @@ async function discoverTemplateIds(
       const batch = parties.slice(i, i + 5)
       const results = await Promise.allSettled(
         batch.map((party) =>
-          client.post('/v2/state/active-contracts', {
-            filter: { filtersByParty: { [party]: { cumulative: [wildcardFilter] } } },
-            verbose: false,
-            activeAtOffset: offset,
-          })
+          client.post('/v2/state/active-contracts', acsQuery(
+            { filtersByParty: { [party]: { cumulative: [wildcardFilter] } } },
+            false,
+            offset,
+          ))
         )
       )
       let found = false
@@ -1036,9 +1041,23 @@ export async function generateSharedSecretToken(): Promise<string> {
 // ---- Helper: Build active contracts filter ----
 
 export function buildAnyPartyTemplateFilter(templateId: string, activeAtOffset?: string): ActiveContractsRequest {
-  return {
-    filter: {
-      filtersForAnyParty: {
+  return acsQuery({
+    filtersForAnyParty: {
+      cumulative: [{
+        identifierFilter: {
+          TemplateFilter: {
+            value: { templateId, includeCreatedEventBlob: false }
+          }
+        }
+      }]
+    }
+  }, true, activeAtOffset)
+}
+
+export function buildTemplateFilter(partyId: string, templateId: string, activeAtOffset?: string): ActiveContractsRequest {
+  return acsQuery({
+    filtersByParty: {
+      [partyId]: {
         cumulative: [{
           identifierFilter: {
             TemplateFilter: {
@@ -1047,64 +1066,36 @@ export function buildAnyPartyTemplateFilter(templateId: string, activeAtOffset?:
           }
         }]
       }
-    },
-    verbose: true,
-    ...(activeAtOffset ? { activeAtOffset } : {}),
-  }
-}
-
-export function buildTemplateFilter(partyId: string, templateId: string, activeAtOffset?: string): ActiveContractsRequest {
-  return {
-    filter: {
-      filtersByParty: {
-        [partyId]: {
-          cumulative: [{
-            identifierFilter: {
-              TemplateFilter: {
-                value: { templateId, includeCreatedEventBlob: false }
-              }
-            }
-          }]
-        }
-      }
-    },
-    verbose: true,
-    ...(activeAtOffset ? { activeAtOffset } : {}),
-  }
+    }
+  }, true, activeAtOffset)
 }
 
 export function buildInterfaceFilter(partyId: string, interfaceId: string): ActiveContractsRequest {
-  return {
-    filter: {
-      filtersByParty: {
-        [partyId]: {
-          cumulative: [{
-            identifierFilter: {
-              InterfaceFilter: {
-                value: { interfaceId, includeCreatedEventBlob: false, includeInterfaceView: true }
-              }
+  return acsQuery({
+    filtersByParty: {
+      [partyId]: {
+        cumulative: [{
+          identifierFilter: {
+            InterfaceFilter: {
+              value: { interfaceId, includeCreatedEventBlob: false, includeInterfaceView: true }
             }
-          }]
-        }
+          }
+        }]
       }
-    },
-    verbose: true,
-  }
+    }
+  }, true)
 }
 
 export function buildWildcardFilter(partyId: string): ActiveContractsRequest {
-  return {
-    filter: {
-      filtersByParty: {
-        [partyId]: {
-          cumulative: [{
-            identifierFilter: {
-              WildcardFilter: { value: { includeCreatedEventBlob: false } }
-            }
-          }]
-        }
+  return acsQuery({
+    filtersByParty: {
+      [partyId]: {
+        cumulative: [{
+          identifierFilter: {
+            WildcardFilter: { value: { includeCreatedEventBlob: false } }
+          }
+        }]
       }
-    },
-    verbose: true,
-  }
+    }
+  }, true)
 }

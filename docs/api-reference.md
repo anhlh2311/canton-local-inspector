@@ -237,21 +237,25 @@ Filters can be scoped to specific parties or all parties:
 
 ```json
 {
-  "filter": {
+  "eventFormat": {
     "filtersByParty": {
       "<partyId>": { "cumulative": [ ...filters ] }
-    }
-  }
+    },
+    "verbose": true
+  },
+  "activeAtOffset": "<ledger-end offset>"
 }
 ```
 
 ```json
 {
-  "filter": {
+  "eventFormat": {
     "filtersForAnyParty": {
       "cumulative": [ ...filters ]
-    }
-  }
+    },
+    "verbose": false
+  },
+  "activeAtOffset": "<ledger-end offset>"
 }
 ```
 
