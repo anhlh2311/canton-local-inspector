@@ -7,6 +7,7 @@ import fs from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
 import { LEDGER_GATEWAY_SECRET_HEADER, ledgerGatewayHeaders } from './lib/ledgerGateway.js'
+import { applyLighthouseAuth } from './lib/lighthouseAuth.js'
 
 /** Read a specific non-VITE_ env var from .env.local / .env (server-side only, never bundled). */
 function readEnvVar(name: string): string | undefined {
@@ -197,15 +198,19 @@ function dynamicProxyPlugin(): Plugin {
               port: targetUrl.port || (isHttps ? 443 : 80),
               path: targetUrl.pathname + targetUrl.search,
               method: req.method,
-              headers: {
-                ...incoming,
-                host: targetUrl.host,
-                ...ledgerGatewayHeaders(
-                  targetOrigin,
-                  readEnvVar('LEDGER_GATEWAY_SECRET') ?? process.env.LEDGER_GATEWAY_SECRET,
-                  readEnvVar('LEDGER_GATEWAY_HOSTS') ?? process.env.LEDGER_GATEWAY_HOSTS,
-                ),
-              },
+              headers: applyLighthouseAuth(
+                {
+                  ...incoming,
+                  host: targetUrl.host,
+                  ...ledgerGatewayHeaders(
+                    targetOrigin,
+                    readEnvVar('LEDGER_GATEWAY_SECRET') ?? process.env.LEDGER_GATEWAY_SECRET,
+                    readEnvVar('LEDGER_GATEWAY_HOSTS') ?? process.env.LEDGER_GATEWAY_HOSTS,
+                  ),
+                },
+                targetOrigin,
+                readEnvVar('LIGHTHOUSE_API_KEY') ?? process.env.LIGHTHOUSE_API_KEY,
+              ),
             },
             (proxyRes) => {
               // Forward status and headers

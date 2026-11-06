@@ -202,6 +202,38 @@ describe('fetchTransactionByUpdateId', () => {
     )
   })
 
+  it('maps an inspector session 401 to the sign-in prompt', async () => {
+    mockedGet.mockRejectedValue(createAxiosError(401, { error: 'Authentication required' }))
+
+    await expect(fetchTransactionByUpdateId('1220abc', 'mainnet')).rejects.toThrow(
+      'Sign in to use the proxy',
+    )
+  })
+
+  it('surfaces a Lighthouse API-key 401 message', async () => {
+    mockedGet.mockRejectedValue(createAxiosError(401, { message: 'API key required' }))
+
+    await expect(fetchTransactionByUpdateId('1220abc', 'mainnet')).rejects.toThrow(
+      'API key required',
+    )
+  })
+
+  it('surfaces an invalid Lighthouse API key', async () => {
+    mockedGet.mockRejectedValue(createAxiosError(401, { message: 'Invalid API key' }))
+
+    await expect(fetchTransactionByUpdateId('1220abc', 'mainnet')).rejects.toThrow(
+      'Invalid API key',
+    )
+  })
+
+  it('surfaces a Lighthouse API-key scope 403', async () => {
+    mockedGet.mockRejectedValue(createAxiosError(403, { message: 'API key scope is not allowed' }))
+
+    await expect(fetchTransactionByUpdateId('1220abc', 'mainnet')).rejects.toThrow(
+      'API key scope is not allowed',
+    )
+  })
+
   it('maps HTTP 502 with details to proxy failure message', async () => {
     mockedGet.mockRejectedValue(createAxiosError(502, { details: 'upstream timeout' }))
 

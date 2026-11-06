@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { jwtVerify } from 'jose'
 import { ledgerGatewayHeaders } from '../lib/ledgerGateway.js'
+import { applyLighthouseAuth } from '../lib/lighthouseAuth.js'
 
 /**
  * Canton API proxy serverless function.
@@ -119,11 +120,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(403).json({ error: `Target URL not allowed: ${targetOrigin}` })
   }
 
-  const headers: Record<string, string> = {
-    ...ledgerGatewayHeaders(targetOrigin),
-  }
-  if (req.headers.authorization) headers['Authorization'] = req.headers.authorization as string
-  if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type'] as string
+  const headers = applyLighthouseAuth(
+    {
+      ...ledgerGatewayHeaders(targetOrigin),
+      ...(req.headers.authorization ? { Authorization: req.headers.authorization as string } : {}),
+      ...(req.headers['content-type'] ? { 'Content-Type': req.headers['content-type'] as string } : {}),
+    },
+    targetOrigin,
+  )
 
   try {
     const fetchOptions: RequestInit = {

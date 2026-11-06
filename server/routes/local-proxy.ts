@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express'
 import http from 'node:http'
 import https from 'node:https'
 import { ledgerGatewayHeaders } from '../../lib/ledgerGateway.js'
+import { applyLighthouseAuth } from '../../lib/lighthouseAuth.js'
 
 /**
  * Local proxy for Vite-style proxy paths used when VITE_DEPLOY_ENV=local.
@@ -70,12 +71,15 @@ function forwardRequest(req: Request, res: Response, targetUrl: URL): void {
   const isHttps = targetUrl.protocol === 'https:'
   const transport = isHttps ? https : http
 
-  const headers: Record<string, string> = {
-    ...ledgerGatewayHeaders(targetUrl.origin),
-  }
-  if (req.headers.authorization) headers['Authorization'] = req.headers.authorization
-  if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type']
-  headers['Host'] = targetUrl.host
+  const headers = applyLighthouseAuth(
+    {
+      ...ledgerGatewayHeaders(targetUrl.origin),
+      ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
+      ...(req.headers['content-type'] ? { 'Content-Type': req.headers['content-type'] } : {}),
+      Host: targetUrl.host,
+    },
+    targetUrl.origin,
+  )
 
   const proxyReq = transport.request(
     {

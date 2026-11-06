@@ -29,6 +29,15 @@ export function lighthouseProxyRequestPath(network: LighthouseNetwork, updateId:
   return `/${encoded}/api/transactions/${encodeURIComponent(updateId)}`
 }
 
+function lighthouseMessage(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return undefined
+  const record = data as { message?: unknown; error?: unknown }
+  if (typeof record.error === 'string' && record.error.length > 0) return undefined
+  if (typeof record.message !== 'string') return undefined
+  const message = record.message.trim()
+  return message || undefined
+}
+
 function lighthouseProxyUrl(network: LighthouseNetwork, updateId: string): string {
   const rest = lighthouseProxyRequestPath(network, updateId)
   if (isVercel) return `/api/proxy${rest}`
@@ -63,6 +72,10 @@ export async function fetchTransactionByUpdateId(
     if (err instanceof Error && err.message === 'Response has no traffic summary') throw err
     if (isAxiosError(err) && err.response?.status === 404) {
       throw new Error('Transaction not found on this network')
+    }
+    if (isAxiosError(err) && (err.response?.status === 401 || err.response?.status === 403)) {
+      const message = lighthouseMessage(err.response.data)
+      if (message) throw new Error(message)
     }
     if (isAxiosError(err) && err.response?.status === 401) {
       throw new Error('Sign in to use the proxy')

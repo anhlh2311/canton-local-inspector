@@ -277,3 +277,4 @@ Filters can be scoped to specific parties or all parties:
 | `KV_REST_API_URL` | Upstash Redis URL |
 | `KV_REST_API_TOKEN` | Upstash Redis token |
 | `CRON_SECRET` | Bearer token for cron endpoint auth |
+| `LIGHTHOUSE_API_KEY` | Loop Data Mainnet key (`lhk_…`). Proxies send `Authorization: Bearer` only to `lighthouse.xyz`. Devnet is unchanged. |
